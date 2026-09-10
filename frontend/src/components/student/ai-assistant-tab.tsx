@@ -431,6 +431,62 @@ export function AIAssistantTab({ studentId, studentName }: AIAssistantTabProps) 
           box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
         }
 
+        @media (max-width: 640px) {
+          .ai-top-bar {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 10px;
+            padding: 12px;
+          }
+
+          .ai-tabs-nav {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            width: 100%;
+          }
+
+          .ai-nav-btn {
+            justify-content: center;
+            font-size: 12px;
+            padding: 8px 6px;
+            text-align: center;
+          }
+
+          .quota-status-pill {
+            justify-content: center;
+            width: 100%;
+          }
+
+          .chat-container {
+            height: 520px;
+          }
+
+          .chat-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 14px;
+          }
+
+          .chat-header-title {
+            width: 100%;
+          }
+
+          .chat-messages-area {
+            padding: 14px 12px;
+          }
+
+          .chat-bubble-wrapper {
+            max-width: 95%;
+          }
+
+          .chat-input-row {
+            padding: 10px 12px;
+            gap: 8px;
+          }
+        }
+
         .status-dot.error {
           background: #ef4444;
           box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);

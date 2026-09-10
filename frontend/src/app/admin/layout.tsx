@@ -70,21 +70,27 @@ export default function AdminLayout({
           display: flex;
           min-height: 100vh;
           background: var(--bg-secondary);
+          width: 100%;
+          overflow-x: hidden;
         }
 
         .admin-main-content {
           flex: 1;
+          min-width: 0;
           margin-left: var(--sidebar-width, 260px);
           padding: 32px;
           min-height: 100vh;
           background: var(--bg-secondary);
-          width: 100%;
-          max-width: 100%;
+          width: calc(100% - var(--sidebar-width, 260px));
+          max-width: calc(100% - var(--sidebar-width, 260px));
+          box-sizing: border-box;
         }
 
         @media (max-width: 1023px) {
           .admin-main-content {
             margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
             padding: 72px 16px 28px 16px !important;
           }
         }

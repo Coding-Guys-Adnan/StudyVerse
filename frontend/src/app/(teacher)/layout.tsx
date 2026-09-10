@@ -63,22 +63,28 @@ export default function TeacherLayout({
           display: flex;
           min-height: 100vh;
           background: var(--bg-secondary);
+          width: 100%;
+          overflow-x: hidden;
         }
 
         .teacher-main-content {
           flex: 1;
+          min-width: 0;
           margin-left: ${sidebarCollapsed ? "var(--sidebar-collapsed, 72px)" : "var(--sidebar-width, 260px)"};
           padding: 32px;
           background: var(--bg-secondary);
           min-height: 100vh;
           transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-          width: 100%;
-          max-width: 100%;
+          width: calc(100% - ${sidebarCollapsed ? "var(--sidebar-collapsed, 72px)" : "var(--sidebar-width, 260px)"});
+          max-width: calc(100% - ${sidebarCollapsed ? "var(--sidebar-collapsed, 72px)" : "var(--sidebar-width, 260px)"});
+          box-sizing: border-box;
         }
 
         @media (max-width: 1023px) {
           .teacher-main-content {
             margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
             padding: 76px 16px 32px 16px !important;
           }
         }

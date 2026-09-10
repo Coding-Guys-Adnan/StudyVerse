@@ -62,21 +62,27 @@ export default function StudentPortalLayout({
           display: flex;
           min-height: 100vh;
           background: var(--bg-secondary);
+          width: 100%;
+          overflow-x: hidden;
         }
 
         .student-main-content {
           flex: 1;
+          min-width: 0;
           margin-left: var(--sidebar-width, 260px);
           padding: 32px;
           background: var(--bg-secondary);
           min-height: 100vh;
-          width: 100%;
-          max-width: 100%;
+          width: calc(100% - var(--sidebar-width, 260px));
+          max-width: calc(100% - var(--sidebar-width, 260px));
+          box-sizing: border-box;
         }
 
         @media (max-width: 1023px) {
           .student-main-content {
             margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
             padding: 76px 16px 32px 16px !important;
           }
         }

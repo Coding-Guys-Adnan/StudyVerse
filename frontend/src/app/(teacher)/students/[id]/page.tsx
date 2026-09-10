@@ -170,41 +170,52 @@ export default function StudentProfilePage() {
           background: var(--card-bg);
           border-radius: var(--radius-lg);
           border: 1px solid var(--border-color);
-          padding: 20px 24px;
+          padding: 24px;
           margin-bottom: 24px;
           box-shadow: var(--shadow-sm);
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
         }
 
         @media (max-width: 640px) {
           .profile-header-card {
             padding: 16px;
+            gap: 14px;
+            margin-bottom: 16px;
           }
         }
 
-        .profile-info-row {
+        .profile-top-row {
           display: flex;
-          align-items: flex-start;
+          align-items: center;
           justify-content: space-between;
           flex-wrap: wrap;
-          gap: 20px;
+          gap: 14px;
         }
 
         .profile-main-meta {
           display: flex;
           align-items: center;
-          gap: 20px;
+          gap: 16px;
+          min-width: 0;
         }
 
         .profile-avatar {
-          width: 64px;
-          height: 64px;
+          width: 60px;
+          height: 60px;
           border-radius: 16px;
           display: flex;
           align-items: center;
           justify-content: center;
           color: white;
           font-weight: 700;
-          font-size: 24px;
+          font-size: 22px;
+          flex-shrink: 0;
+        }
+
+        .profile-name-class {
+          min-width: 0;
         }
 
         .profile-name-class h1 {
@@ -213,6 +224,19 @@ export default function StudentProfilePage() {
           color: var(--text-primary);
           letter-spacing: -0.5px;
           margin-bottom: 4px;
+          word-break: break-word;
+        }
+
+        @media (max-width: 640px) {
+          .profile-name-class h1 {
+            font-size: 18px;
+          }
+          .profile-avatar {
+            width: 48px;
+            height: 48px;
+            font-size: 18px;
+            border-radius: 12px;
+          }
         }
 
         .profile-class-badge {
@@ -229,10 +253,21 @@ export default function StudentProfilePage() {
 
         .profile-contact-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 12px;
-          flex: 1;
-          max-width: 600px;
+          width: 100%;
+          background: var(--bg-tertiary);
+          padding: 14px 16px;
+          border-radius: var(--radius-md, 10px);
+          border: 1px solid var(--border-color);
+        }
+
+        @media (max-width: 640px) {
+          .profile-contact-grid {
+            grid-template-columns: 1fr;
+            padding: 12px;
+            gap: 10px;
+          }
         }
 
         .contact-item {
@@ -241,20 +276,30 @@ export default function StudentProfilePage() {
           gap: 8px;
           font-size: 13px;
           color: var(--text-secondary);
+          min-width: 0;
+        }
+
+        .contact-item span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .contact-item svg {
           color: var(--text-tertiary);
           min-width: 16px;
+          flex-shrink: 0;
         }
 
         .student-notes-section {
-          margin-top: 16px;
-          padding-top: 16px;
-          border-top: 1px solid var(--border-color);
+          padding: 12px 14px;
+          background: var(--bg-tertiary);
+          border-radius: var(--radius-sm);
+          border-left: 3px solid var(--brand-500);
           font-size: 13px;
           color: var(--text-secondary);
           line-height: 1.5;
+          word-break: break-word;
         }
 
         .edit-student-btn {
@@ -271,12 +316,21 @@ export default function StudentProfilePage() {
           cursor: pointer;
           transition: all 0.15s ease;
           font-family: inherit;
+          white-space: nowrap;
+          flex-shrink: 0;
         }
 
         .edit-student-btn:hover {
           background: var(--brand-50);
           color: var(--brand-600);
           border-color: var(--brand-300);
+        }
+
+        @media (max-width: 640px) {
+          .edit-student-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+          }
         }
 
         /* ─── Modal ─────────────────────────────────── */
@@ -411,7 +465,7 @@ export default function StudentProfilePage() {
 
       {/* Header Profile Info */}
       <div className="profile-header-card">
-        <div className="profile-info-row">
+        <div className="profile-top-row">
           <div className="profile-main-meta">
             <div
               className="profile-avatar"
@@ -431,49 +485,6 @@ export default function StudentProfilePage() {
             </div>
           </div>
 
-          <div className="profile-contact-grid">
-            {student.email && (
-              <div className="contact-item">
-                <Mail size={16} />
-                <span>{student.email}</span>
-              </div>
-            )}
-            {student.phone && (
-              <div className="contact-item">
-                <Phone size={16} />
-                <span>Student: {student.phone}</span>
-              </div>
-            )}
-            {student.parent_phone && (
-              <div className="contact-item">
-                <Phone size={16} />
-                <span>Parent: {student.parent_phone}</span>
-              </div>
-            )}
-            {student.date_of_birth && (
-              <div className="contact-item" style={{ color: "var(--brand-600)", fontWeight: 500 }}>
-                <Cake size={16} style={{ color: "#f59e0b" }} />
-                <span>
-                  Birthday:{" "}
-                  {new Date(student.date_of_birth + "T00:00:00").toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </span>
-              </div>
-            )}
-            {student.monthly_fees !== null && student.monthly_fees !== undefined && (
-              <div className="contact-item" style={{ color: "var(--brand-600)", fontWeight: 600 }}>
-                <CreditCard size={16} />
-                <span>
-                  Fee: ₹{student.monthly_fees.toLocaleString("en-IN")}/mo
-                  {student.fee_due_day ? ` (Due: ${student.fee_due_day}th)` : ""}
-                </span>
-              </div>
-            )}
-          </div>
-
           <button
             className="edit-student-btn"
             onClick={openEditModal}
@@ -484,6 +495,49 @@ export default function StudentProfilePage() {
             <Edit3 size={15} />
             <span>Edit Details</span>
           </button>
+        </div>
+
+        <div className="profile-contact-grid">
+          {student.email && (
+            <div className="contact-item">
+              <Mail size={16} />
+              <span>{student.email}</span>
+            </div>
+          )}
+          {student.phone && (
+            <div className="contact-item">
+              <Phone size={16} />
+              <span>Student: {student.phone}</span>
+            </div>
+          )}
+          {student.parent_phone && (
+            <div className="contact-item">
+              <Phone size={16} />
+              <span>Parent: {student.parent_phone}</span>
+            </div>
+          )}
+          {student.date_of_birth && (
+            <div className="contact-item" style={{ color: "var(--brand-600)", fontWeight: 500 }}>
+              <Cake size={16} style={{ color: "#f59e0b" }} />
+              <span>
+                Birthday:{" "}
+                {new Date(student.date_of_birth + "T00:00:00").toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </span>
+            </div>
+          )}
+          {student.monthly_fees !== null && student.monthly_fees !== undefined && (
+            <div className="contact-item" style={{ color: "var(--brand-600)", fontWeight: 600 }}>
+              <CreditCard size={16} />
+              <span>
+                Fee: ₹{student.monthly_fees.toLocaleString("en-IN")}/mo
+                {student.fee_due_day ? ` (Due: ${student.fee_due_day}th)` : ""}
+              </span>
+            </div>
+          )}
         </div>
 
         {student.notes && (
