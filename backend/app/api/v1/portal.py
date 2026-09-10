@@ -307,6 +307,35 @@ async def toggle_portal_checklist_item(
         raise HTTPException(status_code=404, detail="Checklist item not found")
     item.completed = completed
     await db.flush()
+
+    chap_res = await db.execute(
+        select(SyllabusChapter).where(SyllabusChapter.id == item.chapter_id)
+    )
+    chapter = chap_res.scalar_one_or_none()
+    if chapter:
+        syl_res = await db.execute(
+            select(Syllabus).where(Syllabus.id == chapter.syllabus_id)
+        )
+        syl = syl_res.scalar_one_or_none()
+        if syl:
+            items_res = await db.execute(
+                select(ChecklistItem)
+                .join(SyllabusChapter, ChecklistItem.chapter_id == SyllabusChapter.id)
+                .where(SyllabusChapter.syllabus_id == syl.id)
+            )
+            all_items = items_res.scalars().all()
+            if all_items:
+                comp_count = sum(1 for ci in all_items if ci.completed)
+                calc_prog = round((comp_count / len(all_items)) * 100)
+                syl.progress = calc_prog
+                if calc_prog == 100:
+                    syl.status = "completed"
+                elif calc_prog > 0:
+                    syl.status = "teaching"
+                else:
+                    syl.status = "pending"
+                await db.flush()
+
     return {"message": "Toggled item status", "completed": item.completed}
 
 
@@ -367,10 +396,7 @@ async def update_portal_syllabus(
     for k, v in update_data.items():
         setattr(entry, k, v)
     await db.flush()
-    res = await db.execute(
-        select(Syllabus).options(*_syllabus_options()).where(Syllabus.id == syllabus_id)
-    )
-    return SyllabusResponse.model_validate(res.scalar_one())
+    return SyllabusResponse.model_validate(entry)
 
 
 @router.delete("/syllabus/{syllabus_id}")

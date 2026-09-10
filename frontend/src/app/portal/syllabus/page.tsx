@@ -101,8 +101,30 @@ export default function StudentSyllabusPage() {
     },
   });
 
+  const updatePortalSyllabusCache = (updater: (prev: Syllabus[]) => Syllabus[]) => {
+    queryClient.setQueryData(["portal-syllabus"], (old: any) => {
+      if (!old) return old;
+      if (Array.isArray(old)) return updater(old);
+      if (old.data && Array.isArray(old.data)) {
+        return { ...old, data: updater(old.data) };
+      }
+      return old;
+    });
+  };
+
   const deleteItemMutation = useMutation({
     mutationFn: (itemId: string) => portalApi.deleteChecklistItem(itemId),
+    onMutate: (itemId) => {
+      updatePortalSyllabusCache((prev) =>
+        prev.map((s) => ({
+          ...s,
+          chapters: s.chapters?.map((ch) => ({
+            ...ch,
+            checklist_items: ch.checklist_items?.filter((it) => it.id !== itemId),
+          })),
+        }))
+      );
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["portal-syllabus"] });
     },
@@ -110,6 +132,9 @@ export default function StudentSyllabusPage() {
 
   const deleteSyllabusMutation = useMutation({
     mutationFn: (syllabusId: string) => portalApi.deleteSyllabus(syllabusId),
+    onMutate: (syllabusId) => {
+      updatePortalSyllabusCache((prev) => prev.filter((s) => s.id !== syllabusId));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["portal-syllabus"] });
     },
@@ -122,12 +147,39 @@ export default function StudentSyllabusPage() {
     }));
   };
 
-  const handleToggleItem = async (itemId: string, currentStatus: boolean) => {
+  const handleToggleItem = async (syllabusId: string, chapterId: string, itemId: string, currentStatus: boolean) => {
+    const nextStatus = !currentStatus;
+    updatePortalSyllabusCache((prev) =>
+      prev.map((s) => {
+        if (s.id !== syllabusId) return s;
+        const updatedChapters = s.chapters?.map((ch) => {
+          if (chapterId && ch.id !== chapterId) return ch;
+          const updatedItems = ch.checklist_items?.map((it) =>
+            it.id === itemId ? { ...it, completed: nextStatus } : it
+          ) || [];
+          return { ...ch, checklist_items: updatedItems };
+        }) || [];
+
+        const allItems = updatedChapters.flatMap((c) => c.checklist_items || []);
+        const total = allItems.length;
+        const completed = allItems.filter((i) => i.completed).length;
+        const progress = total > 0 ? Math.round((completed / total) * 100) : s.progress;
+        const status = progress === 100 ? "completed" : progress > 0 ? "teaching" : "pending";
+
+        return {
+          ...s,
+          progress,
+          status,
+          chapters: updatedChapters,
+        };
+      })
+    );
+
     try {
-      await portalApi.toggleChecklistItem(itemId, !currentStatus);
-      queryClient.invalidateQueries({ queryKey: ["portal-syllabus"] });
+      await portalApi.toggleChecklistItem(itemId, nextStatus);
     } catch (err) {
       console.error("Failed to toggle item", err);
+      queryClient.invalidateQueries({ queryKey: ["portal-syllabus"] });
     }
   };
 
@@ -412,7 +464,7 @@ export default function StudentSyllabusPage() {
                                   <input
                                     type="checkbox"
                                     checked={cItem.completed}
-                                    onChange={() => handleToggleItem(cItem.id, cItem.completed)}
+                                    onChange={() => handleToggleItem(syllabusItem.id, chapterObj?.id || "", cItem.id, cItem.completed)}
                                     style={{ accentColor: "var(--brand-500)", width: 18, height: 18, cursor: "pointer" }}
                                   />
                                   <span

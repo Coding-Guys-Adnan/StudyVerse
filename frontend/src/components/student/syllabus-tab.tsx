@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   FileText,
@@ -132,9 +132,24 @@ export function SyllabusTab({ studentId, studentName }: SyllabusTabProps) {
     select: (res) => res.data,
   });
 
-  const invalidateSyllabus = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["syllabus", studentId] });
-    await refetch();
+  const invalidateSyllabus = () => {
+    queryClient.invalidateQueries({ queryKey: ["syllabus", studentId] });
+  };
+
+  const updateSyllabusCache = (updater: (prev: Syllabus[]) => Syllabus[]) => {
+    queryClient.setQueryData(["syllabus", studentId], (old: any) => {
+      if (!old) return old;
+      if (Array.isArray(old)) {
+        return updater(old);
+      }
+      if (old.data && Array.isArray(old.data)) {
+        return {
+          ...old,
+          data: updater(old.data),
+        };
+      }
+      return old;
+    });
   };
 
   const toggleExpand = (syllabusId: string) => {
@@ -328,142 +343,360 @@ Science,Light Reflection and Refraction,chapter`;
       return;
     }
 
+    const trimmed = current.trim();
+    setEditingSubject(null);
+
+    // Optimistic instant update
+    updateSyllabusCache((prev) =>
+      prev.map((s) => (s.subject === original ? { ...s, subject: trimmed } : s))
+    );
+
     const itemsToUpdate = syllabusList.filter((s) => s.subject === original);
     try {
       await Promise.all(
         itemsToUpdate.map((s) =>
-          academicApi.updateSyllabus(studentId, s.id, { subject: current.trim() })
+          academicApi.updateSyllabus(studentId, s.id, { subject: trimmed })
         )
       );
-      invalidateSyllabus();
     } catch (err) {
       alert("Failed to update subject name.");
-    } finally {
-      setEditingSubject(null);
+      invalidateSyllabus();
     }
   };
 
   // ─── Update Chapter Title ───────────────────────────────
   const handleSaveChapterTitle = async (syllabusId: string, chapterObj?: SyllabusChapter | null) => {
-    if (!editingChapterTitle.trim()) {
+    const trimmed = editingChapterTitle.trim();
+    if (!trimmed) {
       setEditingSyllabusId(null);
       return;
     }
+    setEditingSyllabusId(null);
+
+    // Optimistic instant update
+    updateSyllabusCache((prev) =>
+      prev.map((s) => {
+        if (s.id !== syllabusId) return s;
+        return {
+          ...s,
+          chapter: trimmed,
+          chapters: s.chapters?.map((ch) =>
+            chapterObj && ch.id === chapterObj.id ? { ...ch, title: trimmed } : ch
+          ),
+        };
+      })
+    );
+
     try {
       if (chapterObj) {
         await academicApi.updateSyllabusChapter(studentId, chapterObj.id, {
-          title: editingChapterTitle.trim(),
+          title: trimmed,
         });
       }
       await academicApi.updateSyllabus(studentId, syllabusId, {
-        chapter: editingChapterTitle.trim(),
+        chapter: trimmed,
       });
-      invalidateSyllabus();
     } catch (err) {
       alert("Failed to update chapter title.");
-    } finally {
-      setEditingSyllabusId(null);
+      invalidateSyllabus();
     }
   };
 
+  // ─── Fast Field & Slider Updates ─────────────────────────
+  const sliderDebounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+
+  const handleUpdateSyllabusField = (
+    syllabusId: string,
+    patch: Partial<Syllabus>
+  ) => {
+    // 1. Optimistic cache update (0ms UI latency)
+    updateSyllabusCache((prev) =>
+      prev.map((s) => (s.id === syllabusId ? { ...s, ...patch } : s))
+    );
+    // 2. Fire backend request in background
+    academicApi.updateSyllabus(studentId, syllabusId, patch).catch((err) => {
+      console.error("Failed to update syllabus", err);
+      invalidateSyllabus();
+    });
+  };
+
+  const handleSliderChange = (syllabusItem: Syllabus, val: number) => {
+    let stat = syllabusItem.status;
+    if (val === 100) stat = "completed";
+    else if (val > 0 && syllabusItem.status === "pending") stat = "teaching";
+    else if (val === 0) stat = "pending";
+
+    // 1. Instant 60fps local update
+    updateSyllabusCache((prev) =>
+      prev.map((s) => (s.id === syllabusItem.id ? { ...s, progress: val, status: stat as any } : s))
+    );
+
+    // 2. Debounce backend API call by 250ms
+    if (sliderDebounceTimers.current[syllabusItem.id]) {
+      clearTimeout(sliderDebounceTimers.current[syllabusItem.id]);
+    }
+    sliderDebounceTimers.current[syllabusItem.id] = setTimeout(() => {
+      academicApi.updateSyllabus(studentId, syllabusItem.id, {
+        progress: val,
+        status: stat as any,
+      }).catch((err) => {
+        console.error("Failed to update syllabus progress", err);
+        invalidateSyllabus();
+      });
+      delete sliderDebounceTimers.current[syllabusItem.id];
+    }, 250);
+  };
+
+  const handleDeleteSyllabus = (syllabusId: string) => {
+    if (!confirm("Are you sure you want to delete this chapter?")) return;
+    updateSyllabusCache((prev) => prev.filter((s) => s.id !== syllabusId));
+    academicApi.deleteSyllabus(studentId, syllabusId).catch((err) => {
+      alert("Failed to delete chapter.");
+      invalidateSyllabus();
+    });
+  };
+
   // ─── Checklist Item Mutations & Actions ────────────────
-  const handleAddChecklistItem = async (targetId: string) => {
+  const handleAddChecklistItem = async (targetId: string, syllabusId?: string, currentItems?: ChecklistItem[]) => {
     const text = newItemText[targetId]?.trim();
     if (!text) return;
 
+    setNewItemText((prev) => ({ ...prev, [targetId]: "" }));
+    setShowAddItemForm((prev) => ({ ...prev, [targetId]: false }));
+
     try {
-      await academicApi.createChecklistItem(studentId, targetId, { text, completed: false });
-      setNewItemText((prev) => ({ ...prev, [targetId]: "" }));
-      setShowAddItemForm((prev) => ({ ...prev, [targetId]: false }));
-      invalidateSyllabus();
+      const res = await academicApi.createChecklistItem(studentId, targetId, { text, completed: false });
+      const newItem = res.data;
+      if (syllabusId && currentItems) {
+        updateSyllabusCache((prev) =>
+          prev.map((s) => {
+            if (s.id !== syllabusId) return s;
+            const nextItems = [...currentItems, newItem];
+            const total = nextItems.length;
+            const completedCount = nextItems.filter((i) => i.completed).length;
+            const calcProgress = Math.round((completedCount / total) * 100);
+            return {
+              ...s,
+              progress: calcProgress,
+              chapters: s.chapters?.map((ch) =>
+                ch.id === targetId
+                  ? { ...ch, checklist_items: [...(ch.checklist_items || []), newItem] }
+                  : ch
+              ),
+            };
+          })
+        );
+      } else {
+        invalidateSyllabus();
+      }
     } catch (err) {
       alert("Failed to add checklist item.");
+      invalidateSyllabus();
     }
   };
 
   const handleToggleChecklistItem = async (item: ChecklistItem, allItemsInChapter: ChecklistItem[], syllabusId: string) => {
+    const newStatus = !item.completed;
+    const total = allItemsInChapter.length;
+    const completedCount = allItemsInChapter.filter((i) => (i.id === item.id ? newStatus : i.completed)).length;
+    const calcProgress = Math.round((completedCount / total) * 100);
+    let statusStr = "teaching";
+    if (calcProgress === 100) statusStr = "completed";
+    else if (calcProgress === 0) statusStr = "pending";
+
+    // Instant optimistic update (0ms UI latency)
+    updateSyllabusCache((prev) =>
+      prev.map((s) => {
+        if (s.id !== syllabusId) return s;
+        return {
+          ...s,
+          progress: calcProgress,
+          status: statusStr as any,
+          chapters: s.chapters?.map((ch) => ({
+            ...ch,
+            checklist_items: ch.checklist_items?.map((ci) =>
+              ci.id === item.id ? { ...ci, completed: newStatus } : ci
+            ),
+          })),
+        };
+      })
+    );
+
     try {
-      const newStatus = !item.completed;
-      await academicApi.updateChecklistItem(studentId, item.id, { completed: newStatus });
-
-      const total = allItemsInChapter.length;
-      const completedCount = allItemsInChapter.filter((i) => (i.id === item.id ? newStatus : i.completed)).length;
-      const calcProgress = Math.round((completedCount / total) * 100);
-      let statusStr = "teaching";
-      if (calcProgress === 100) statusStr = "completed";
-      else if (calcProgress === 0) statusStr = "pending";
-
-      await academicApi.updateSyllabus(studentId, syllabusId, {
-        progress: calcProgress,
-        status: statusStr as any,
-      });
-
-      invalidateSyllabus();
+      await Promise.all([
+        academicApi.updateChecklistItem(studentId, item.id, { completed: newStatus }),
+        academicApi.updateSyllabus(studentId, syllabusId, {
+          progress: calcProgress,
+          status: statusStr as any,
+        }),
+      ]);
     } catch (err) {
       alert("Failed to update checklist item.");
+      invalidateSyllabus();
     }
   };
 
-  const handleSaveChecklistItemText = async (itemId: string) => {
-    if (!editingItemText.trim()) {
+  const handleSaveChecklistItemText = async (itemId: string, syllabusId?: string) => {
+    const trimmed = editingItemText.trim();
+    if (!trimmed) {
       setEditingItemId(null);
       return;
     }
+    setEditingItemId(null);
+    if (syllabusId) {
+      updateSyllabusCache((prev) =>
+        prev.map((s) => {
+          if (s.id !== syllabusId) return s;
+          return {
+            ...s,
+            chapters: s.chapters?.map((ch) => ({
+              ...ch,
+              checklist_items: ch.checklist_items?.map((ci) =>
+                ci.id === itemId ? { ...ci, text: trimmed } : ci
+              ),
+            })),
+          };
+        })
+      );
+    }
     try {
-      await academicApi.updateChecklistItem(studentId, itemId, { text: editingItemText.trim() });
-      invalidateSyllabus();
+      await academicApi.updateChecklistItem(studentId, itemId, { text: trimmed });
     } catch (err) {
       alert("Failed to update item text.");
-    } finally {
-      setEditingItemId(null);
+      invalidateSyllabus();
     }
   };
 
-  const handleDeleteChecklistItem = async (itemId: string) => {
-    try {
-      await academicApi.deleteChecklistItem(studentId, itemId);
-      invalidateSyllabus();
-    } catch (err) {
-      alert("Failed to delete checklist item.");
+  const handleDeleteChecklistItem = async (itemId: string, syllabusId?: string, allItemsInChapter?: ChecklistItem[]) => {
+    if (syllabusId && allItemsInChapter) {
+      const remaining = allItemsInChapter.filter((i) => i.id !== itemId);
+      const total = remaining.length;
+      const completedCount = remaining.filter((i) => i.completed).length;
+      const calcProgress = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+      let statusStr = "teaching";
+      if (calcProgress === 100 && total > 0) statusStr = "completed";
+      else if (calcProgress === 0) statusStr = "pending";
+
+      updateSyllabusCache((prev) =>
+        prev.map((s) => {
+          if (s.id !== syllabusId) return s;
+          return {
+            ...s,
+            progress: calcProgress,
+            status: statusStr as any,
+            chapters: s.chapters?.map((ch) => ({
+              ...ch,
+              checklist_items: ch.checklist_items?.filter((ci) => ci.id !== itemId),
+            })),
+          };
+        })
+      );
+      try {
+        await Promise.all([
+          academicApi.deleteChecklistItem(studentId, itemId),
+          academicApi.updateSyllabus(studentId, syllabusId, {
+            progress: calcProgress,
+            status: statusStr as any,
+          }),
+        ]);
+      } catch (err) {
+        alert("Failed to delete checklist item.");
+        invalidateSyllabus();
+      }
+    } else {
+      try {
+        await academicApi.deleteChecklistItem(studentId, itemId);
+        invalidateSyllabus();
+      } catch (err) {
+        alert("Failed to delete checklist item.");
+      }
     }
   };
 
   // ─── Chapter Note Mutations & Actions ───────────────────
-  const handleAddChapterNote = async (targetId: string) => {
+  const handleAddChapterNote = async (targetId: string, syllabusId?: string) => {
     const text = newNoteText[targetId]?.trim();
     if (!text) return;
 
+    setNewNoteText((prev) => ({ ...prev, [targetId]: "" }));
+    setShowAddNoteForm((prev) => ({ ...prev, [targetId]: false }));
+
     try {
-      await academicApi.createChapterNote(studentId, targetId, { text });
-      setNewNoteText((prev) => ({ ...prev, [targetId]: "" }));
-      setShowAddNoteForm((prev) => ({ ...prev, [targetId]: false }));
-      invalidateSyllabus();
+      const res = await academicApi.createChapterNote(studentId, targetId, { text });
+      const newNote = res.data;
+      if (syllabusId) {
+        updateSyllabusCache((prev) =>
+          prev.map((s) => {
+            if (s.id !== syllabusId) return s;
+            return {
+              ...s,
+              chapters: s.chapters?.map((ch) =>
+                ch.id === targetId
+                  ? { ...ch, notes: [...(ch.notes || []), newNote] }
+                  : ch
+              ),
+            };
+          })
+        );
+      } else {
+        invalidateSyllabus();
+      }
     } catch (err) {
       alert("Failed to add note.");
+      invalidateSyllabus();
     }
   };
 
-  const handleSaveChapterNoteText = async (noteId: string) => {
-    if (!editingNoteText.trim()) {
+  const handleSaveChapterNoteText = async (noteId: string, syllabusId?: string) => {
+    const trimmed = editingNoteText.trim();
+    if (!trimmed) {
       setEditingNoteId(null);
       return;
     }
+    setEditingNoteId(null);
+    if (syllabusId) {
+      updateSyllabusCache((prev) =>
+        prev.map((s) => {
+          if (s.id !== syllabusId) return s;
+          return {
+            ...s,
+            chapters: s.chapters?.map((ch) => ({
+              ...ch,
+              notes: ch.notes?.map((n) => (n.id === noteId ? { ...n, text: trimmed } : n)),
+            })),
+          };
+        })
+      );
+    }
     try {
-      await academicApi.updateChapterNote(studentId, noteId, { text: editingNoteText.trim() });
-      invalidateSyllabus();
+      await academicApi.updateChapterNote(studentId, noteId, { text: trimmed });
     } catch (err) {
       alert("Failed to update note.");
-    } finally {
-      setEditingNoteId(null);
+      invalidateSyllabus();
     }
   };
 
-  const handleDeleteChapterNote = async (noteId: string) => {
+  const handleDeleteChapterNote = async (noteId: string, syllabusId?: string) => {
+    if (syllabusId) {
+      updateSyllabusCache((prev) =>
+        prev.map((s) => {
+          if (s.id !== syllabusId) return s;
+          return {
+            ...s,
+            chapters: s.chapters?.map((ch) => ({
+              ...ch,
+              notes: ch.notes?.filter((n) => n.id !== noteId),
+            })),
+          };
+        })
+      );
+    }
     try {
       await academicApi.deleteChapterNote(studentId, noteId);
-      invalidateSyllabus();
+      if (!syllabusId) invalidateSyllabus();
     } catch (err) {
       alert("Failed to delete note.");
+      invalidateSyllabus();
     }
   };
 
@@ -1644,10 +1877,7 @@ Science,Light Reflection and Refraction,chapter`;
                                       type="button"
                                       className={`type-popover-item ${tOpt.colorClass} ${isSelected ? "is-selected" : ""}`}
                                       onClick={() => {
-                                        updateSyllabusMutation.mutate({
-                                          syllabusId: syllabusItem.id,
-                                          data: { chapter_type: tOpt.id },
-                                        });
+                                        handleUpdateSyllabusField(syllabusItem.id, { chapter_type: tOpt.id });
                                         setOpenTypePopoverId(null);
                                       }}
                                     >
@@ -1662,10 +1892,7 @@ Science,Light Reflection and Refraction,chapter`;
                                     type="button"
                                     className="type-popover-item type-clear-item"
                                     onClick={() => {
-                                      updateSyllabusMutation.mutate({
-                                        syllabusId: syllabusItem.id,
-                                        data: { chapter_type: null },
-                                      });
+                                      handleUpdateSyllabusField(syllabusItem.id, { chapter_type: null });
                                       setOpenTypePopoverId(null);
                                     }}
                                   >
@@ -1757,10 +1984,7 @@ Science,Light Reflection and Refraction,chapter`;
                                           }
                                           const newTermVal =
                                             updated.length > 0 ? updated.join(", ") : null;
-                                          updateSyllabusMutation.mutate({
-                                            syllabusId: syllabusItem.id,
-                                            data: { term: newTermVal },
-                                          });
+                                          handleUpdateSyllabusField(syllabusItem.id, { term: newTermVal });
                                         }}
                                         style={{
                                           width: 14,
@@ -1783,12 +2007,9 @@ Science,Light Reflection and Refraction,chapter`;
                           onChange={(e) => {
                             const val = e.target.value as any;
                             const isCompleted = val === "completed";
-                            updateSyllabusMutation.mutate({
-                              syllabusId: syllabusItem.id,
-                              data: {
-                                status: val,
-                                progress: isCompleted ? 100 : syllabusItem.progress,
-                              },
+                            handleUpdateSyllabusField(syllabusItem.id, {
+                              status: val,
+                              progress: isCompleted ? 100 : (val === "pending" ? 0 : syllabusItem.progress),
                             });
                           }}
                         >
@@ -1805,18 +2026,7 @@ Science,Light Reflection and Refraction,chapter`;
                             max="100"
                             className="progress-slider"
                             value={syllabusItem.progress}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value);
-                              let stat = syllabusItem.status;
-                              if (val === 100) stat = "completed";
-                              else if (val > 0 && syllabusItem.status === "pending") stat = "teaching";
-                              else if (val === 0) stat = "pending";
-
-                              updateSyllabusMutation.mutate({
-                                syllabusId: syllabusItem.id,
-                                data: { progress: val, status: stat as any },
-                              });
-                            }}
+                            onChange={(e) => handleSliderChange(syllabusItem, parseInt(e.target.value))}
                           />
                           <span className="progress-percent-badge">
                             {syllabusItem.progress}%
@@ -1829,7 +2039,7 @@ Science,Light Reflection and Refraction,chapter`;
                           className="delete-chapter-btn"
                           onClick={(e) => {
                             e.stopPropagation();
-                            deleteSyllabusMutation.mutate(syllabusItem.id);
+                            handleDeleteSyllabus(syllabusItem.id);
                           }}
                           title="Delete Chapter"
                         >
@@ -1863,10 +2073,10 @@ Science,Light Reflection and Refraction,chapter`;
                                       style={{ fontSize: 13, padding: "3px 8px" }}
                                       value={editingItemText}
                                       onChange={(e) => setEditingItemText(e.target.value)}
-                                      onKeyDown={(e) => e.key === "Enter" && handleSaveChecklistItemText(cItem.id)}
+                                      onKeyDown={(e) => e.key === "Enter" && handleSaveChecklistItemText(cItem.id, syllabusItem.id)}
                                       autoFocus
                                     />
-                                    <button className="edit-icon-btn" onClick={() => handleSaveChecklistItemText(cItem.id)}>
+                                    <button className="edit-icon-btn" onClick={() => handleSaveChecklistItemText(cItem.id, syllabusItem.id)}>
                                       <Check size={14} style={{ color: "#059669" }} />
                                     </button>
                                     <button className="edit-icon-btn" onClick={() => setEditingItemId(null)}>
@@ -1935,7 +2145,7 @@ Science,Light Reflection and Refraction,chapter`;
 
                                 <button
                                   style={{ background: "none", border: "none", cursor: "pointer", color: "var(--gray-400)", padding: 4 }}
-                                  onClick={() => handleDeleteChecklistItem(cItem.id)}
+                                  onClick={() => handleDeleteChecklistItem(cItem.id, syllabusItem.id, checklistItems)}
                                   title="Delete checklist item"
                                 >
                                   <Trash2 size={13} />
@@ -1954,14 +2164,14 @@ Science,Light Reflection and Refraction,chapter`;
                                   placeholder="Type custom checklist text (e.g. Ex 1, Complete questions 5–15)..."
                                   value={newItemText[chapterTargetId] || ""}
                                   onChange={(e) => setNewItemText({ ...newItemText, [chapterTargetId]: e.target.value })}
-                                  onKeyDown={(e) => e.key === "Enter" && handleAddChecklistItem(chapterTargetId)}
+                                  onKeyDown={(e) => e.key === "Enter" && handleAddChecklistItem(chapterTargetId, syllabusItem.id, checklistItems)}
                                   autoFocus
                                 />
                                 <button
                                   type="button"
                                   className="btn-primary"
                                   style={{ padding: "6px 12px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}
-                                  onClick={() => handleAddChecklistItem(chapterTargetId)}
+                                  onClick={() => handleAddChecklistItem(chapterTargetId, syllabusItem.id, checklistItems)}
                                 >
                                   <Check size={14} /> Save Item
                                 </button>
@@ -2009,7 +2219,7 @@ Science,Light Reflection and Refraction,chapter`;
                                       />
                                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                         <button className="btn-secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setEditingNoteId(null)}>Cancel</button>
-                                        <button className="btn-primary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => handleSaveChapterNoteText(n.id)}>Save Note</button>
+                                        <button className="btn-primary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => handleSaveChapterNoteText(n.id, syllabusItem.id)}>Save Note</button>
                                       </div>
                                     </div>
                                   ) : (
@@ -2022,7 +2232,7 @@ Science,Light Reflection and Refraction,chapter`;
                                           <button className="edit-icon-btn" onClick={() => { setEditingNoteId(n.id); setEditingNoteText(n.text); }} title="Edit Note">
                                             <Pencil size={12} />
                                           </button>
-                                          <button className="edit-icon-btn" onClick={() => handleDeleteChapterNote(n.id)} title="Delete Note">
+                                          <button className="edit-icon-btn" onClick={() => handleDeleteChapterNote(n.id, syllabusItem.id)} title="Delete Note">
                                             <Trash2 size={12} />
                                           </button>
                                         </div>
@@ -2081,7 +2291,7 @@ Science,Light Reflection and Refraction,chapter`;
                                   type="button"
                                   className="btn-primary"
                                   style={{ padding: "5px 12px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}
-                                  onClick={() => handleAddChapterNote(chapterTargetId)}
+                                  onClick={() => handleAddChapterNote(chapterTargetId, syllabusItem.id)}
                                 >
                                   <Check size={14} /> Save Note
                                 </button>
