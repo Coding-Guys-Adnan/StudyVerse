@@ -209,7 +209,24 @@ export function TestsTab({ studentId }: TestsTabProps) {
 
   const deleteMutation = useMutation({
     mutationFn: (testId: string) => academicApi.deleteTest(studentId, testId),
-    onSuccess: () => {
+    onMutate: async (testId) => {
+      await queryClient.cancelQueries({ queryKey: ["tests", studentId] });
+      const previous = queryClient.getQueryData(["tests", studentId]);
+      queryClient.setQueryData(["tests", studentId], (old: any) => {
+        if (!old) return old;
+        const updater = (items: any[]) => items.filter((t) => t.id !== testId);
+        if (Array.isArray(old)) return updater(old);
+        if (old.data && Array.isArray(old.data)) return { ...old, data: updater(old.data) };
+        return old;
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["tests", studentId], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["tests"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
     },

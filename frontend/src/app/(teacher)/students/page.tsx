@@ -24,11 +24,19 @@ import Link from "next/link";
 
 export default function StudentsPage() {
   const queryClient = useQueryClient();
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   // ─── Queries ────────────────────────────────────────────
   const { data, isLoading } = useQuery({
@@ -670,8 +678,8 @@ export default function StudentsPage() {
           <input
             type="text"
             placeholder="Search students by name, email, or class..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             id="student-search"
           />
         </div>

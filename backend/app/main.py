@@ -28,6 +28,8 @@ for origin in settings.cors_origins_list:
     if origin and origin not in origins:
         origins.append(origin)
 
+from starlette.middleware.gzip import GZipMiddleware
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -35,6 +37,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
 )
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 from pathlib import Path
 

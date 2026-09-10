@@ -71,16 +71,50 @@ export function HomeworkTab({ studentId }: HomeworkTabProps) {
   const toggleStatusMutation = useMutation({
     mutationFn: ({ hwId, status }: { hwId: string; status: "assigned" | "completed" | "incomplete" }) =>
       academicApi.updateHomework(studentId, hwId, { status }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["homework"] });
+    onMutate: async ({ hwId, status }) => {
+      await queryClient.cancelQueries({ queryKey: ["homework", studentId] });
+      const previous = queryClient.getQueryData(["homework", studentId]);
+      queryClient.setQueryData(["homework", studentId], (old: any) => {
+        if (!old) return old;
+        const updater = (items: any[]) => items.map((h) => (h.id === hwId ? { ...h, status } : h));
+        if (Array.isArray(old)) return updater(old);
+        if (old.data && Array.isArray(old.data)) return { ...old, data: updater(old.data) };
+        return old;
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["homework", studentId], context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["homework", studentId] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (hwId: string) => academicApi.deleteHomework(studentId, hwId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["homework"] });
+    onMutate: async (hwId) => {
+      await queryClient.cancelQueries({ queryKey: ["homework", studentId] });
+      const previous = queryClient.getQueryData(["homework", studentId]);
+      queryClient.setQueryData(["homework", studentId], (old: any) => {
+        if (!old) return old;
+        const updater = (items: any[]) => items.filter((h) => h.id !== hwId);
+        if (Array.isArray(old)) return updater(old);
+        if (old.data && Array.isArray(old.data)) return { ...old, data: updater(old.data) };
+        return old;
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["homework", studentId], context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["homework", studentId] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
     },
   });

@@ -14,8 +14,9 @@ engine_kwargs = {
 if not is_sqlite:
     engine_kwargs.update({
         "pool_pre_ping": True,
-        "pool_size": 5,
-        "max_overflow": 10,
+        "pool_recycle": 300,
+        "pool_size": 10,
+        "max_overflow": 20,
     })
 
 engine = create_async_engine(db_url, **engine_kwargs)
