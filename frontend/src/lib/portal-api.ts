@@ -70,6 +70,30 @@ export const portalApi = {
   createSyllabus: (data: { subject: string; chapter: string; chapter_type?: string | null; term?: string | null; status?: string; progress?: number; sort_order?: number }) =>
     api.post<Syllabus>("/portal/syllabus", data),
 
+  createSyllabusBulk: async (
+    items: {
+      subject: string;
+      chapter: string;
+      chapter_type?: string | null;
+      term?: string | null;
+      status?: string;
+      progress?: number;
+      sort_order?: number;
+    }[]
+  ) => {
+    try {
+      return await api.post<Syllabus[]>("/portal/syllabus/bulk", items);
+    } catch (err) {
+      // Fallback: create topics sequentially if bulk endpoint fails
+      const results: Syllabus[] = [];
+      for (const item of items) {
+        const res = await api.post<Syllabus>("/portal/syllabus", item);
+        results.push(res.data);
+      }
+      return { data: results };
+    }
+  },
+
   updateSyllabus: (id: string, data: Partial<Syllabus>) =>
     api.put<Syllabus>(`/portal/syllabus/${id}`, data),
 

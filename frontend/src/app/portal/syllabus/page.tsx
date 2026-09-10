@@ -14,6 +14,10 @@ import {
   Trash2,
   X,
   Upload,
+  ListPlus,
+  Sparkles,
+  AlertCircle,
+  Check,
 } from "lucide-react";
 import { portalApi, type Syllabus } from "@/lib/portal-api";
 import { getFileUrl } from "@/lib/api";
@@ -42,11 +46,16 @@ export default function StudentSyllabusPage() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Form state
+  // Modal & form states
+  const [modalMode, setModalMode] = useState<"single" | "multiple">("single");
+  const [multiInputMode, setMultiInputMode] = useState<"paste" | "rows">("paste");
   const [newSubject, setNewSubject] = useState("");
   const [newChapter, setNewChapter] = useState("");
   const [newChapterType, setNewChapterType] = useState("chapter");
   const [newTerm, setNewTerm] = useState("SEM1");
+  const [bulkChaptersText, setBulkChaptersText] = useState("");
+  const [dynamicChapterRows, setDynamicChapterRows] = useState<string[]>(["", "", ""]);
+  const [formError, setFormError] = useState("");
 
   // Inline items state
   const [addingItemChapterId, setAddingItemChapterId] = useState<string | null>(null);
@@ -73,6 +82,37 @@ export default function StudentSyllabusPage() {
     select: (res) => res.data,
   });
 
+  // Unique list of existing subjects for autocomplete & quick chips
+  const existingSubjects = useMemo(() => {
+    const list: string[] = [];
+    syllabusList.forEach((s) => {
+      if (s.subject && !list.includes(s.subject)) {
+        list.push(s.subject);
+      }
+    });
+    return list;
+  }, [syllabusList]);
+
+  // Parse chapters from paste text or dynamic rows
+  const parsedMultipleChapters = useMemo(() => {
+    if (multiInputMode === "paste") {
+      const lines = bulkChaptersText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length === 1 && lines[0].includes(",")) {
+        return lines[0].split(",").map((c) => c.trim()).filter(Boolean);
+      }
+      return lines;
+    } else {
+      return dynamicChapterRows.map((c) => c.trim()).filter(Boolean);
+    }
+  }, [bulkChaptersText, dynamicChapterRows, multiInputMode]);
+
+  const openAddModal = (initialSubject: string = "", mode: "single" | "multiple" = "single") => {
+    setNewSubject(initialSubject);
+    setModalMode(mode);
+    setFormError("");
+    setShowAddModal(true);
+  };
+
   const addSyllabusMutation = useMutation({
     mutationFn: (data: { subject: string; chapter: string; chapter_type: string; term: string }) =>
       portalApi.createSyllabus({
@@ -88,6 +128,37 @@ export default function StudentSyllabusPage() {
       setShowAddModal(false);
       setNewSubject("");
       setNewChapter("");
+      setFormError("");
+    },
+    onError: (err: any) => {
+      setFormError(err?.response?.data?.detail || "Failed to add topic. Please try again.");
+    },
+  });
+
+  const addBulkSyllabusMutation = useMutation({
+    mutationFn: (items: { subject: string; chapter: string; chapter_type: string; term: string }[]) =>
+      portalApi.createSyllabusBulk(
+        items.map((item, idx) => ({
+          subject: item.subject,
+          chapter: item.chapter,
+          chapter_type: item.chapter_type,
+          term: item.term,
+          status: "pending",
+          progress: 0,
+          sort_order: idx,
+        }))
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-syllabus"] });
+      setShowAddModal(false);
+      setNewSubject("");
+      setNewChapter("");
+      setBulkChaptersText("");
+      setDynamicChapterRows(["", "", ""]);
+      setFormError("");
+    },
+    onError: (err: any) => {
+      setFormError(err?.response?.data?.detail || "Failed to add multiple chapters. Please try again.");
     },
   });
 
@@ -211,25 +282,48 @@ export default function StudentSyllabusPage() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {canEdit && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                fontSize: 13,
-                fontWeight: 600,
-                borderRadius: "var(--radius-sm, 8px)",
-                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                color: "#fff",
-                border: "none",
-                cursor: "pointer",
-                boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)",
-              }}
-            >
-              <Plus size={15} /> Add Topic
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => openAddModal("", "single")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 14px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  borderRadius: "var(--radius-sm, 8px)",
+                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  color: "#fff",
+                  border: "none",
+                  cursor: "pointer",
+                  boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)",
+                }}
+                id="student-add-topic-btn"
+              >
+                <Plus size={15} /> Add Topic
+              </button>
+              <button
+                onClick={() => openAddModal("", "multiple")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 14px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  borderRadius: "var(--radius-sm, 8px)",
+                  background: "var(--card-bg, #fff)",
+                  color: "var(--brand-600, #4f46e5)",
+                  border: "1px solid var(--brand-300, #a5b4fc)",
+                  cursor: "pointer",
+                  boxShadow: "0 2px 6px rgba(99, 102, 241, 0.08)",
+                }}
+                id="student-bulk-chapters-btn"
+              >
+                <ListPlus size={15} /> Add Multiple Chapters
+              </button>
+            </div>
           )}
 
           {syllabusList.length > 0 && (
@@ -299,6 +393,30 @@ export default function StudentSyllabusPage() {
                   <div style={{ width: 100, height: 6, background: "var(--border-color)", borderRadius: 100, overflow: "hidden" }}>
                     <div style={{ height: "100%", background: "var(--brand-500)", width: `${overallProgress}%` }} />
                   </div>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => openAddModal(subj, "multiple")}
+                      title={`Add multiple chapters to ${subj}`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 10px",
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        borderRadius: 6,
+                        background: "var(--card-bg, #fff)",
+                        color: "var(--brand-600, #4f46e5)",
+                        border: "1px solid var(--border-color, #e2e8f0)",
+                        cursor: "pointer",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <Plus size={13} /> Add Chapters
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -721,7 +839,7 @@ export default function StudentSyllabusPage() {
         studentName={profile?.name || "Student"}
       />
 
-      {/* Add Topic Modal */}
+      {/* Add Topic / Multiple Chapters Modal */}
       {showAddModal && (
         <div
           style={{
@@ -743,90 +861,171 @@ export default function StudentSyllabusPage() {
               borderRadius: "var(--radius, 12px)",
               border: "1px solid var(--border-color, #e2e8f0)",
               width: "100%",
-              maxWidth: 440,
+              maxWidth: modalMode === "multiple" ? 540 : 460,
               boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
               padding: 24,
+              maxHeight: "90vh",
+              overflowY: "auto",
+              transition: "max-width 0.2s ease",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Add Syllabus Topic</h3>
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
+                  {modalMode === "multiple" ? "Add Multiple Chapters" : "Add Syllabus Topic"}
+                </h3>
+                <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0 0" }}>
+                  {modalMode === "multiple"
+                    ? "Add multiple chapters or topics at once to your syllabus"
+                    : "Add an individual chapter or study topic"}
+                </p>
+              </div>
               <button
                 onClick={() => setShowAddModal(false)}
-                style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer" }}
+                style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", padding: 4 }}
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!newSubject.trim() || !newChapter.trim()) return;
-                addSyllabusMutation.mutate({
-                  subject: newSubject.trim(),
-                  chapter: newChapter.trim(),
-                  chapter_type: newChapterType,
-                  term: newTerm,
-                });
+            {/* Mode Switcher Tabs */}
+            <div
+              style={{
+                display: "flex",
+                background: "var(--bg-tertiary, #f8fafc)",
+                borderRadius: 8,
+                padding: 3,
+                marginBottom: 16,
+                border: "1px solid var(--border-color, #e2e8f0)",
               }}
-              style={{ display: "flex", flexDirection: "column", gap: 14 }}
             >
-              <div>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                  Subject *
-                </label>
-                <input
-                  required
-                  placeholder="e.g. Mathematics, Science"
-                  value={newSubject}
-                  onChange={(e) => setNewSubject(e.target.value)}
+              <button
+                type="button"
+                onClick={() => {
+                  setModalMode("single");
+                  setFormError("");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "7px 12px",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                  background: modalMode === "single" ? "var(--card-bg, #fff)" : "transparent",
+                  color: modalMode === "single" ? "var(--text-primary)" : "var(--text-secondary)",
+                  boxShadow: modalMode === "single" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                }}
+              >
+                Single Topic
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setModalMode("multiple");
+                  setFormError("");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "7px 12px",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                  background: modalMode === "multiple" ? "var(--card-bg, #fff)" : "transparent",
+                  color: modalMode === "multiple" ? "var(--brand-600, #4f46e5)" : "var(--text-secondary)",
+                  boxShadow: modalMode === "multiple" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                }}
+              >
+                <ListPlus size={14} />
+                <span>Multiple Chapters</span>
+                <span
                   style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: 6,
-                    border: "1px solid var(--border-color)",
-                    background: "var(--bg-tertiary)",
-                    color: "var(--text-primary)",
-                    fontSize: 13,
-                    boxSizing: "border-box",
+                    fontSize: 10,
+                    padding: "1px 6px",
+                    borderRadius: 10,
+                    background: "rgba(99, 102, 241, 0.1)",
+                    color: "var(--brand-600, #4f46e5)",
+                    fontWeight: 700,
                   }}
-                />
-              </div>
+                >
+                  Bulk
+                </span>
+              </button>
+            </div>
 
-              <div>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                  Chapter / Topic Title *
-                </label>
-                <input
-                  required
-                  placeholder="e.g. Quadratic Equations"
-                  value={newChapter}
-                  onChange={(e) => setNewChapter(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: 6,
-                    border: "1px solid var(--border-color)",
-                    background: "var(--bg-tertiary)",
-                    color: "var(--text-primary)",
-                    fontSize: 13,
-                    boxSizing: "border-box",
-                  }}
-                />
+            {/* Error Banner */}
+            {formError && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 12px",
+                  borderRadius: 6,
+                  background: "rgba(239, 68, 68, 0.1)",
+                  border: "1px solid rgba(239, 68, 68, 0.25)",
+                  color: "#ef4444",
+                  fontSize: 12.5,
+                  marginBottom: 14,
+                }}
+              >
+                <AlertCircle size={15} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>{formError}</span>
               </div>
+            )}
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {modalMode === "single" ? (
+              /* Single Chapter Form */
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setFormError("");
+                  if (!newSubject.trim()) {
+                    setFormError("Please enter a subject name.");
+                    return;
+                  }
+                  if (!newChapter.trim()) {
+                    setFormError("Please enter a chapter title.");
+                    return;
+                  }
+                  addSyllabusMutation.mutate({
+                    subject: newSubject.trim(),
+                    chapter: newChapter.trim(),
+                    chapter_type: newChapterType,
+                    term: newTerm,
+                  });
+                }}
+                style={{ display: "flex", flexDirection: "column", gap: 14 }}
+              >
                 <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                    Category
-                  </label>
-                  <select
-                    value={newChapterType}
-                    onChange={(e) => setNewChapterType(e.target.value)}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+                      Subject *
+                    </label>
+                    {existingSubjects.length > 0 && (
+                      <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Select or type new</span>
+                    )}
+                  </div>
+                  <input
+                    required
+                    list="syllabus-subject-options"
+                    placeholder="e.g. Mathematics, Science"
+                    value={newSubject}
+                    onChange={(e) => setNewSubject(e.target.value)}
                     style={{
                       width: "100%",
-                      padding: "8px 10px",
+                      padding: "8px 12px",
                       borderRadius: 6,
                       border: "1px solid var(--border-color)",
                       background: "var(--bg-tertiary)",
@@ -834,25 +1033,50 @@ export default function StudentSyllabusPage() {
                       fontSize: 13,
                       boxSizing: "border-box",
                     }}
-                  >
-                    <option value="chapter">Chapter</option>
-                    <option value="story">Story</option>
-                    <option value="poem">Poem</option>
-                    <option value="grammar">Grammar</option>
-                    <option value="other">Other</option>
-                  </select>
+                  />
+                  <datalist id="syllabus-subject-options">
+                    {existingSubjects.map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
+
+                  {existingSubjects.length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                      {existingSubjects.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setNewSubject(s)}
+                          style={{
+                            background: newSubject === s ? "var(--brand-50, #eff6ff)" : "var(--bg-tertiary)",
+                            border: newSubject === s ? "1px solid var(--brand-300, #93c5fd)" : "1px solid var(--border-color)",
+                            color: newSubject === s ? "var(--brand-600, #2563eb)" : "var(--text-secondary)",
+                            padding: "2px 8px",
+                            borderRadius: 12,
+                            fontSize: 11,
+                            fontWeight: 500,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                    Term / Exam
+                    Chapter / Topic Title *
                   </label>
-                  <select
-                    value={newTerm}
-                    onChange={(e) => setNewTerm(e.target.value)}
+                  <input
+                    required
+                    placeholder="e.g. Quadratic Equations"
+                    value={newChapter}
+                    onChange={(e) => setNewChapter(e.target.value)}
                     style={{
                       width: "100%",
-                      padding: "8px 10px",
+                      padding: "8px 12px",
                       borderRadius: 6,
                       border: "1px solid var(--border-color)",
                       background: "var(--bg-tertiary)",
@@ -860,51 +1084,491 @@ export default function StudentSyllabusPage() {
                       fontSize: 13,
                       boxSizing: "border-box",
                     }}
-                  >
-                    <option value="SEM1">SEM1</option>
-                    <option value="SEM2">SEM2</option>
-                    <option value="UNIT TEST I">UT I</option>
-                    <option value="UNIT TEST II">UT II</option>
-                    <option value="UNIT TEST III">UT III</option>
-                    <option value="CLASS TEST">Class Test</option>
-                  </select>
+                  />
+                  <span style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                    Tip: Want to add multiple chapters at once? Switch to <strong>Multiple Chapters</strong> above.
+                  </span>
                 </div>
-              </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: 6,
-                    border: "1px solid var(--border-color)",
-                    background: "transparent",
-                    color: "var(--text-secondary)",
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={addSyllabusMutation.isPending}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 6,
-                    border: "none",
-                    background: "var(--brand-500, #4f46e5)",
-                    color: "#fff",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  {addSyllabusMutation.isPending ? "Adding..." : "Add Topic"}
-                </button>
-              </div>
-            </form>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                      Category
+                    </label>
+                    <select
+                      value={newChapterType}
+                      onChange={(e) => setNewChapterType(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 10px",
+                        borderRadius: 6,
+                        border: "1px solid var(--border-color)",
+                        background: "var(--bg-tertiary)",
+                        color: "var(--text-primary)",
+                        fontSize: 13,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <option value="chapter">Chapter</option>
+                      <option value="story">Story</option>
+                      <option value="poem">Poem</option>
+                      <option value="grammar">Grammar</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                      Term / Exam
+                    </label>
+                    <select
+                      value={newTerm}
+                      onChange={(e) => setNewTerm(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 10px",
+                        borderRadius: 6,
+                        border: "1px solid var(--border-color)",
+                        background: "var(--bg-tertiary)",
+                        color: "var(--text-primary)",
+                        fontSize: 13,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <option value="SEM1">SEM1</option>
+                      <option value="SEM2">SEM2</option>
+                      <option value="UNIT TEST I">UT I</option>
+                      <option value="UNIT TEST II">UT II</option>
+                      <option value="UNIT TEST III">UT III</option>
+                      <option value="CLASS TEST">Class Test</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
+                      background: "transparent",
+                      color: "var(--text-secondary)",
+                      fontSize: 13,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={addSyllabusMutation.isPending}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: 6,
+                      border: "none",
+                      background: "var(--brand-500, #4f46e5)",
+                      color: "#fff",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {addSyllabusMutation.isPending ? "Adding..." : "Add Topic"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* Multiple Chapters Bulk Form */
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setFormError("");
+                  if (!newSubject.trim()) {
+                    setFormError("Please enter or select a subject name.");
+                    return;
+                  }
+                  if (parsedMultipleChapters.length === 0) {
+                    setFormError("Please enter at least one chapter name.");
+                    return;
+                  }
+                  const items = parsedMultipleChapters.map((ch) => ({
+                    subject: newSubject.trim(),
+                    chapter: ch,
+                    chapter_type: newChapterType,
+                    term: newTerm,
+                  }));
+                  addBulkSyllabusMutation.mutate(items);
+                }}
+                style={{ display: "flex", flexDirection: "column", gap: 14 }}
+              >
+                {/* Subject Selector */}
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+                      Subject *
+                    </label>
+                    {existingSubjects.length > 0 && (
+                      <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Select or type new</span>
+                    )}
+                  </div>
+                  <input
+                    required
+                    list="bulk-syllabus-subject-options"
+                    placeholder="e.g. Mathematics, Science"
+                    value={newSubject}
+                    onChange={(e) => setNewSubject(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      fontSize: 13,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                  <datalist id="bulk-syllabus-subject-options">
+                    {existingSubjects.map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
+
+                  {existingSubjects.length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                      {existingSubjects.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setNewSubject(s)}
+                          style={{
+                            background: newSubject === s ? "var(--brand-50, #eff6ff)" : "var(--bg-tertiary)",
+                            border: newSubject === s ? "1px solid var(--brand-300, #93c5fd)" : "1px solid var(--border-color)",
+                            color: newSubject === s ? "var(--brand-600, #2563eb)" : "var(--text-secondary)",
+                            padding: "2px 8px",
+                            borderRadius: 12,
+                            fontSize: 11,
+                            fontWeight: 500,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Sub-mode selector: Paste list vs Rows */}
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+                      Chapters / Topics to Add *
+                    </label>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => setMultiInputMode("paste")}
+                        style={{
+                          background: multiInputMode === "paste" ? "var(--card-bg)" : "transparent",
+                          border: multiInputMode === "paste" ? "1px solid var(--border-color)" : "none",
+                          borderRadius: 4,
+                          padding: "2px 8px",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: multiInputMode === "paste" ? "var(--brand-600, #4f46e5)" : "var(--text-tertiary)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Paste List
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMultiInputMode("rows")}
+                        style={{
+                          background: multiInputMode === "rows" ? "var(--card-bg)" : "transparent",
+                          border: multiInputMode === "rows" ? "1px solid var(--border-color)" : "none",
+                          borderRadius: 4,
+                          padding: "2px 8px",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: multiInputMode === "rows" ? "var(--brand-600, #4f46e5)" : "var(--text-tertiary)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Row by Row
+                      </button>
+                    </div>
+                  </div>
+
+                  {multiInputMode === "paste" ? (
+                    <div>
+                      <textarea
+                        rows={5}
+                        placeholder={`Chapter 1: Real Numbers\nChapter 2: Polynomials\nChapter 3: Linear Equations\nChapter 4: Quadratic Equations`}
+                        value={bulkChaptersText}
+                        onChange={(e) => setBulkChaptersText(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          borderRadius: 6,
+                          border: "1px solid var(--border-color)",
+                          background: "var(--bg-tertiary)",
+                          color: "var(--text-primary)",
+                          fontSize: 13,
+                          fontFamily: "inherit",
+                          boxSizing: "border-box",
+                          resize: "vertical",
+                        }}
+                      />
+                      <span style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                        Enter or paste chapters. One chapter per line (or separated by commas).
+                      </span>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {dynamicChapterRows.map((rowVal, idx) => (
+                        <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", minWidth: 20 }}>
+                            {idx + 1}.
+                          </span>
+                          <input
+                            placeholder={`e.g. Chapter ${idx + 1} title`}
+                            value={rowVal}
+                            onChange={(e) => {
+                              const copy = [...dynamicChapterRows];
+                              copy[idx] = e.target.value;
+                              setDynamicChapterRows(copy);
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: "7px 10px",
+                              borderRadius: 6,
+                              border: "1px solid var(--border-color)",
+                              background: "var(--bg-tertiary)",
+                              color: "var(--text-primary)",
+                              fontSize: 13,
+                              boxSizing: "border-box",
+                            }}
+                          />
+                          {dynamicChapterRows.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setDynamicChapterRows(dynamicChapterRows.filter((_, i) => i !== idx))}
+                              title="Delete row"
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "var(--text-tertiary)",
+                                cursor: "pointer",
+                                padding: 4,
+                              }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                        <button
+                          type="button"
+                          onClick={() => setDynamicChapterRows([...dynamicChapterRows, ""])}
+                          style={{
+                            padding: "4px 10px",
+                            fontSize: 12,
+                            fontWeight: 600,
+                            borderRadius: 6,
+                            border: "1px dashed var(--border-color)",
+                            background: "transparent",
+                            color: "var(--brand-600, #4f46e5)",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <Plus size={13} /> Add Row
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDynamicChapterRows([...dynamicChapterRows, "", "", ""])}
+                          style={{
+                            padding: "4px 10px",
+                            fontSize: 12,
+                            fontWeight: 500,
+                            borderRadius: 6,
+                            border: "1px solid var(--border-color)",
+                            background: "transparent",
+                            color: "var(--text-secondary)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          +3 Rows
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Common Category & Term for all new chapters */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                      Category (for all)
+                    </label>
+                    <select
+                      value={newChapterType}
+                      onChange={(e) => setNewChapterType(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 10px",
+                        borderRadius: 6,
+                        border: "1px solid var(--border-color)",
+                        background: "var(--bg-tertiary)",
+                        color: "var(--text-primary)",
+                        fontSize: 13,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <option value="chapter">Chapter</option>
+                      <option value="story">Story</option>
+                      <option value="poem">Poem</option>
+                      <option value="grammar">Grammar</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                      Term / Exam (for all)
+                    </label>
+                    <select
+                      value={newTerm}
+                      onChange={(e) => setNewTerm(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 10px",
+                        borderRadius: 6,
+                        border: "1px solid var(--border-color)",
+                        background: "var(--bg-tertiary)",
+                        color: "var(--text-primary)",
+                        fontSize: 13,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <option value="SEM1">SEM1</option>
+                      <option value="SEM2">SEM2</option>
+                      <option value="UNIT TEST I">UT I</option>
+                      <option value="UNIT TEST II">UT II</option>
+                      <option value="UNIT TEST III">UT III</option>
+                      <option value="CLASS TEST">Class Test</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Live Preview of parsed chapters */}
+                {parsedMultipleChapters.length > 0 && (
+                  <div
+                    style={{
+                      background: "rgba(99, 102, 241, 0.05)",
+                      border: "1px solid rgba(99, 102, 241, 0.18)",
+                      borderRadius: 8,
+                      padding: "10px 14px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--brand-600, #4f46e5)", marginBottom: 6 }}>
+                      <Sparkles size={14} />
+                      <span>{parsedMultipleChapters.length} chapter{parsedMultipleChapters.length === 1 ? "" : "s"} detected:</span>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {parsedMultipleChapters.slice(0, 5).map((ch, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 500,
+                            padding: "2px 7px",
+                            borderRadius: 4,
+                            background: "var(--card-bg, #fff)",
+                            border: "1px solid var(--border-color)",
+                            color: "var(--text-primary)",
+                          }}
+                        >
+                          {i + 1}. {ch}
+                        </span>
+                      ))}
+                      {parsedMultipleChapters.length > 5 && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            padding: "2px 7px",
+                            borderRadius: 4,
+                            background: "var(--bg-tertiary)",
+                            color: "var(--text-secondary)",
+                          }}
+                        >
+                          +{parsedMultipleChapters.length - 5} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Modal Actions */}
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
+                      background: "transparent",
+                      color: "var(--text-secondary)",
+                      fontSize: 13,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={addBulkSyllabusMutation.isPending || parsedMultipleChapters.length === 0 || !newSubject.trim()}
+                    style={{
+                      padding: "8px 18px",
+                      borderRadius: 6,
+                      border: "none",
+                      background:
+                        parsedMultipleChapters.length === 0 || !newSubject.trim()
+                          ? "var(--border-color)"
+                          : "linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)",
+                      color: "#fff",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor:
+                        parsedMultipleChapters.length === 0 || !newSubject.trim() || addBulkSyllabusMutation.isPending
+                          ? "not-allowed"
+                          : "pointer",
+                      boxShadow:
+                        parsedMultipleChapters.length > 0 && newSubject.trim()
+                          ? "0 4px 12px rgba(79, 70, 229, 0.25)"
+                          : "none",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <ListPlus size={15} />
+                    {addBulkSyllabusMutation.isPending
+                      ? `Adding ${parsedMultipleChapters.length} Chapters...`
+                      : `Add ${parsedMultipleChapters.length > 0 ? parsedMultipleChapters.length : ""} Chapter${parsedMultipleChapters.length === 1 ? "" : "s"}`}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

@@ -414,3 +414,53 @@ async def test_17_files_can_edit_rejected():
             headers=auth_headers(teacher),
         )
         assert res.status_code == 422, res.text
+
+
+@pytest.mark.asyncio
+async def test_18_portal_syllabus_bulk_blocked_when_no_permission():
+    """Scenario 18: Student with syllabus.can_edit=False calling POST /portal/syllabus/bulk gets 403."""
+    teacher = await create_user("teacher", "t1@example.com", "Teacher One")
+    s_user = await create_user("student", "s1@example.com", "Student One")
+    await create_student(s_user, teacher)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.post(
+            "/api/v1/portal/syllabus/bulk",
+            json=[
+                {"subject": "Science", "chapter": "Physics 1"},
+                {"subject": "Science", "chapter": "Physics 2"},
+            ],
+            headers=auth_headers(s_user),
+        )
+        assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_19_portal_syllabus_bulk_allowed_when_permitted():
+    """Scenario 19: Student with syllabus.can_edit=True calling POST /portal/syllabus/bulk gets 201."""
+    teacher = await create_user("teacher", "t1@example.com", "Teacher One")
+    s_user = await create_user("student", "s1@example.com", "Student One")
+    student = await create_student(s_user, teacher)
+
+    async with async_session_factory() as db:
+        st = await get_or_create_student_teacher(db, student.id, teacher.id)
+        st.permissions = {"syllabus": {"can_edit": True, "can_import": False}}
+        await db.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.post(
+            "/api/v1/portal/syllabus/bulk",
+            json=[
+                {"subject": "Mathematics", "chapter": "Real Numbers", "chapter_type": "chapter", "term": "SEM1"},
+                {"subject": "Mathematics", "chapter": "Polynomials", "chapter_type": "chapter", "term": "SEM1"},
+            ],
+            headers=auth_headers(s_user),
+        )
+        assert res.status_code == 201, res.text
+        data = res.json()
+        assert len(data) == 2
+        assert data[0]["chapter"] == "Real Numbers"
+        assert data[1]["chapter"] == "Polynomials"
+

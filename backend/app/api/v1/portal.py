@@ -373,6 +373,46 @@ async def create_portal_syllabus(
     return SyllabusResponse.model_validate(res.scalar_one())
 
 
+@router.post("/syllabus/bulk", response_model=list[SyllabusResponse], status_code=status.HTTP_201_CREATED)
+async def create_portal_syllabus_bulk(
+    items: list[SyllabusCreate],
+    current_student: User = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk create syllabus topics (Requires can_edit)."""
+    student = await _get_student_for_user(db, current_student)
+    await require_student_permission(db, student, "syllabus", "can_edit")
+    created_ids = []
+    for data in items:
+        entry = Syllabus(
+            student_id=student.id,
+            subject=data.subject,
+            chapter=data.chapter,
+            chapter_type=data.chapter_type,
+            term=data.term,
+            status=data.status,
+            progress=data.progress,
+            sort_order=data.sort_order,
+        )
+        db.add(entry)
+        await db.flush()
+        chap = SyllabusChapter(
+            syllabus_id=entry.id,
+            title=data.chapter,
+            order=0,
+        )
+        db.add(chap)
+        created_ids.append(entry.id)
+    await db.flush()
+    if not created_ids:
+        return []
+    res = await db.execute(
+        select(Syllabus).options(*_syllabus_options()).where(Syllabus.id.in_(created_ids))
+    )
+    result_map = {item.id: item for item in res.scalars().all()}
+    return [SyllabusResponse.model_validate(result_map[cid]) for cid in created_ids if cid in result_map]
+
+
 @router.put("/syllabus/{syllabus_id}", response_model=SyllabusResponse)
 async def update_portal_syllabus(
     syllabus_id: str,
