@@ -36,10 +36,19 @@ def upgrade() -> None:
     default_json_str = json.dumps(DEFAULT_PERMISSIONS)
 
     # 2. Backfill existing student_teachers rows with safe read-only default
-    conn.execute(
-        sa.text("UPDATE student_teachers SET permissions = :perms WHERE permissions IS NULL"),
-        {"perms": default_json_str}
-    )
+    try:
+        if conn.dialect.name == "postgresql":
+            conn.execute(
+                sa.text("UPDATE student_teachers SET permissions = CAST(:perms AS json) WHERE permissions IS NULL"),
+                {"perms": default_json_str}
+            )
+        else:
+            conn.execute(
+                sa.text("UPDATE student_teachers SET permissions = :perms WHERE permissions IS NULL"),
+                {"perms": default_json_str}
+            )
+    except Exception as e:
+        print(f"Notice during permissions backfill: {e}")
 
     # 3. Backfill any existing students who have teacher_id but no student_teachers row
     try:

@@ -208,6 +208,10 @@ def migrate():
         print("[ABORTED] Migration stopped because preflight check failed.")
         sys.exit(1)
 
+    overwrite = "--overwrite" in sys.argv or os.getenv("OVERWRITE", "").lower() in ("1", "true", "yes")
+    if overwrite:
+        print("[!] OVERWRITE MODE ENABLED: Target PostgreSQL tables will be truncated and completely replaced with local SQLite data.")
+
     SrcSession = sessionmaker(bind=src_engine)
     TargetSession = sessionmaker(bind=target_engine)
 
@@ -215,6 +219,16 @@ def migrate():
     target_session = TargetSession()
 
     try:
+        if overwrite:
+            print("\n--- [TRUNCATING TARGET POSTGRESQL TABLES] ---")
+            with target_engine.connect() as conn:
+                for table_name in reversed(TABLES_IN_ORDER):
+                    if table_name in target_meta.tables:
+                        print(f"[-] Truncating target table '{table_name}' (CASCADE)...")
+                        conn.execute(text(f'TRUNCATE TABLE "{table_name}" CASCADE;'))
+                conn.commit()
+            print("[*] All PostgreSQL application tables truncated successfully.\n")
+
         print("--- [DATA MIGRATION START] ---")
         for table_name in TABLES_IN_ORDER:
             src_table = src_meta.tables[table_name]
