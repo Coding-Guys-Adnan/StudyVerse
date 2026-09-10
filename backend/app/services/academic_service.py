@@ -1031,9 +1031,17 @@ async def get_calendar_month(
     month_fee_amount = matched_fee.amount if matched_fee else None
     fee_due_day = getattr(student, "fee_due_day", None)
 
-    # Check student birthday for this month
-    dob = getattr(student, "date_of_birth", None)
-    birthday_day = dob.day if (dob and dob.month == month) else None
+    # Check birthdays for students for this month
+    teacher_students_res = await db.execute(
+        select(Student).where(
+            Student.date_of_birth.is_not(None)
+        )
+    )
+    all_students_with_dob = teacher_students_res.scalars().all()
+    birthdays_by_day: dict[int, list[Student]] = {}
+    for s in all_students_with_dob:
+        if s.date_of_birth and s.date_of_birth.month == month:
+            birthdays_by_day.setdefault(s.date_of_birth.day, []).append(s)
 
     # Build days
     _, num_days = monthrange(year, month)
@@ -1043,16 +1051,19 @@ async def get_calendar_month(
         d = date(year, month, day_num)
         key = d.isoformat()
         day_events = list(events_map.get(key, []))
-        is_birthday = (birthday_day == day_num)
 
-        if is_birthday:
+        # Check birthdays
+        birthday_students_today = birthdays_by_day.get(day_num, [])
+        is_this_student_birthday = any(s.id == student_id for s in birthday_students_today)
+
+        for b_student in birthday_students_today:
             day_events.append(
                 CalendarEventResponse(
-                    id=f"birthday-{key}",
-                    student_id=student_id,
+                    id=f"birthday-{b_student.id}-{key}",
+                    student_id=b_student.id,
                     event_date=d,
-                    title=f"🎂 {student.name}'s Birthday",
-                    description=f"Happy Birthday {student.name}! 🎉",
+                    title=f"🎂 {b_student.name}'s Birthday",
+                    description=f"Happy Birthday {b_student.name}! 🎉",
                     event_type="reminder",
                     created_at=d.isoformat(),
                 )
@@ -1068,7 +1079,7 @@ async def get_calendar_month(
             homework=homework_map.get(key, []),
             events=day_events,
             fee_status=day_fee_status,
-            is_birthday=is_birthday,
+            is_birthday=is_this_student_birthday,
         )
 
     return CalendarMonthResponse(

@@ -938,9 +938,21 @@ async def get_portal_calendar(
     month_fee_amount = matched_fee.amount if matched_fee else None
     fee_due_day = getattr(student, "fee_due_day", None)
 
-    # Check student birthday for this month
-    dob = getattr(student, "date_of_birth", None)
-    birthday_day = dob.day if (dob and dob.month == month) else None
+    # Check all students' birthdays for this month so classmates can see them
+    all_students_res = await db.execute(
+        select(Student).where(Student.date_of_birth.is_not(None))
+    )
+    all_active_students = all_students_res.scalars().all()
+
+    # Group students with birthdays in this month by day
+    birthdays_by_day: dict[int, list[Student]] = {}
+    for s in all_active_students:
+        if s.date_of_birth and s.date_of_birth.month == month:
+            birthdays_by_day.setdefault(s.date_of_birth.day, []).append(s)
+
+    # Trigger automatic birthday announcements check
+    from app.services.announcement_service import check_and_create_birthday_announcements
+    await check_and_create_birthday_announcements(db)
 
     # Build response days
     _, num_days = monthrange(year, month)
@@ -950,20 +962,36 @@ async def get_portal_calendar(
         d = date(year, month, day_num)
         key = d.isoformat()
         day_events = list(events_map.get(key, []))
-        is_birthday = (birthday_day == day_num)
 
-        if is_birthday:
-            day_events.append(
-                CalendarEventResponse(
-                    id=f"birthday-{key}",
-                    student_id=student_id,
-                    event_date=d,
-                    title=f"🎂 Happy Birthday {student.name}!",
-                    description=f"Wishing you a fantastic birthday! 🎉",
-                    event_type="reminder",
-                    created_at=d.isoformat(),
+        # Check if any student has a birthday on this day
+        birthday_students_today = birthdays_by_day.get(day_num, [])
+        is_own_birthday = any(s.id == student_id for s in birthday_students_today)
+
+        for b_student in birthday_students_today:
+            if b_student.id == student_id:
+                day_events.append(
+                    CalendarEventResponse(
+                        id=f"birthday-{b_student.id}-{key}",
+                        student_id=student_id,
+                        event_date=d,
+                        title=f"🎂 Happy Birthday {b_student.name}!",
+                        description="Wishing you a fantastic birthday! 🎉",
+                        event_type="reminder",
+                        created_at=d.isoformat(),
+                    )
                 )
-            )
+            else:
+                day_events.append(
+                    CalendarEventResponse(
+                        id=f"birthday-{b_student.id}-{key}",
+                        student_id=b_student.id,
+                        event_date=d,
+                        title=f"🎂 {b_student.name}'s Birthday",
+                        description=f"Wishing {b_student.name} a very Happy Birthday! 🎉",
+                        event_type="reminder",
+                        created_at=d.isoformat(),
+                    )
+                )
 
         # Set fee_status ONLY on exact paid date
         day_fee_status = "paid" if (month_fee_status == "paid" and month_paid_date == d) else None
@@ -975,7 +1003,7 @@ async def get_portal_calendar(
             homework=homework_map.get(key, []),
             events=day_events,
             fee_status=day_fee_status,
-            is_birthday=is_birthday,
+            is_birthday=is_own_birthday,
         )
 
     return CalendarMonthResponse(

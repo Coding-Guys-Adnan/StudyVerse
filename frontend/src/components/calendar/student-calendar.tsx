@@ -896,24 +896,39 @@ export function StudentCalendar({ studentId }: StudentCalendarProps) {
                       />
                     )}
 
-                    {/* Birthday indicator */}
-                    {dayData?.is_birthday && (
-                      <span
-                        style={{
-                          background: "linear-gradient(135deg, #fbcfe8, #f472b6)",
-                          color: "#831843",
-                          fontSize: 10,
-                          padding: "1px 6px",
-                          borderRadius: 100,
-                          fontWeight: 700,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 2,
-                        }}
-                      >
-                        🎂 Birthday
-                      </span>
-                    )}
+                    {/* Birthday indicator (own or other students) */}
+                    {(() => {
+                      const birthdayEvents = dayData?.events?.filter((e) => e.id?.startsWith("birthday-")) || [];
+                      if (!dayData?.is_birthday && birthdayEvents.length === 0) return null;
+
+                      let label = "🎂 Birthday";
+                      if (birthdayEvents.length === 1) {
+                        const name = birthdayEvents[0].title.replace("🎂 ", "").replace("'s Birthday", "").replace("Happy Birthday ", "").replace("!", "");
+                        label = `🎂 ${name}'s Birthday`;
+                      } else if (birthdayEvents.length > 1) {
+                        label = `🎂 ${birthdayEvents.length} Birthdays`;
+                      }
+
+                      return (
+                        <span
+                          style={{
+                            background: "linear-gradient(135deg, #fbcfe8, #f472b6)",
+                            color: "#831843",
+                            fontSize: 10,
+                            padding: "1px 6px",
+                            borderRadius: 100,
+                            fontWeight: 700,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 2,
+                            whiteSpace: "nowrap",
+                          }}
+                          title={birthdayEvents.map((e) => e.title).join(", ")}
+                        >
+                          {label}
+                        </span>
+                      );
+                    })()}
 
                     {/* Event indicators */}
                     {hasExam && (
@@ -977,29 +992,39 @@ export function StudentCalendar({ studentId }: StudentCalendarProps) {
           </div>
 
           <div className="side-panel-content">
-            {selectedDateStr && monthData?.days[selectedDateStr]?.is_birthday && (
-              <div
-                style={{
-                  background: "linear-gradient(135deg, #fdf2f8, #fbcfe8)",
-                  border: "1px solid #f472b6",
-                  borderRadius: 10,
-                  padding: "12px 14px",
-                  marginBottom: 16,
-                  color: "#831843",
-                  fontWeight: 600,
-                  fontSize: 13,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  boxShadow: "0 2px 8px rgba(244, 114, 182, 0.15)",
-                }}
-              >
-                <span style={{ fontSize: 22 }}>🎂</span>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>Student's Birthday! 🎉</div>
-                  <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 500 }}>Special birthday celebration day on the calendar.</div>
-                </div>
-              </div>
+            {/* Birthday banner for any student having a birthday on this day */}
+            {selectedDateStr && (
+              <>
+                {monthData?.days[selectedDateStr]?.events
+                  ?.filter((e) => e.id?.startsWith("birthday-"))
+                  ?.map((bEvent) => (
+                    <div
+                      key={bEvent.id}
+                      style={{
+                        background: "linear-gradient(135deg, #fdf2f8, #fbcfe8)",
+                        border: "1px solid #f472b6",
+                        borderRadius: 10,
+                        padding: "12px 14px",
+                        marginBottom: 16,
+                        color: "#831843",
+                        fontWeight: 600,
+                        fontSize: 13,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        boxShadow: "0 2px 8px rgba(244, 114, 182, 0.15)",
+                      }}
+                    >
+                      <span style={{ fontSize: 22 }}>🎂</span>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{bEvent.title} 🎉</div>
+                        <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 500 }}>
+                          {bEvent.description || "Special birthday celebration day on the calendar."}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </>
             )}
             {selectedDateStr ? (
               <DayDetailsPanel
