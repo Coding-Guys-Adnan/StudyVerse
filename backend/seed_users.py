@@ -35,8 +35,22 @@ async def seed():
             )
             db.add(student)
             print("Student created!")
+        # Super Admin
+        admin_email = "admin@studyverse.com"
+        result = await db.execute(select(User).where(User.email == admin_email))
+        existing_admin = result.scalar_one_or_none()
+        if not existing_admin:
+            admin = User(
+                email=admin_email,
+                password_hash=hash_password("admin123"),
+                full_name="Primary Super Admin",
+                role="admin",
+                is_active=True,
+            )
+            db.add(admin)
+            print("Super Admin created!")
         else:
-            print("Student already exists!")
+            print("Super Admin already exists!")
 
         await db.commit()
 

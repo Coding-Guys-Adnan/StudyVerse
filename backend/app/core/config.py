@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     # Database — defaults to local SQLite, override with PostgreSQL via .env
     DATABASE_URL: str = "sqlite+aiosqlite:///./studyverse.db"
 
+    # Super Admin Configuration
+    SUPER_ADMIN_EMAIL: str = "admin@studyverse.com"
+
     # Backup & Restore Limits
     MAX_BACKUP_UPLOAD_SIZE: int = 100 * 1024 * 1024  # 100 MB max upload
     MAX_BACKUP_UNCOMPRESSED_SIZE: int = 250 * 1024 * 1024  # 250 MB max uncompressed

@@ -27,8 +27,16 @@ from app.schemas.admin import (
     UpdateStudentAdminRequest,
     UpdateStudentStatusRequest,
     AssignedTeacherInfo,
+    CreateAdminRequest,
+    UpdateAdminRequest,
+    UpdateAdminStatusRequest,
+    AdminUserResponse,
 )
 from app.core.security import hash_password
+from app.core.config import get_settings
+
+settings = get_settings()
+
 
 
 async def list_admin_teachers(db: AsyncSession) -> list[TeacherAdminResponse]:
@@ -652,5 +660,186 @@ async def remove_teacher_from_student(
             await db.flush()
 
     return remaining_teachers
+
+
+# ─── ADMINISTRATOR MANAGEMENT (SUPER ADMIN) ───────────
+
+async def list_admin_users(db: AsyncSession) -> list[AdminUserResponse]:
+    """List all administrator accounts in the system."""
+    result = await db.execute(
+        select(User)
+        .where(User.role == "admin")
+        .order_by(User.created_at.asc())
+    )
+    admins = result.scalars().all()
+    super_email = settings.SUPER_ADMIN_EMAIL.lower()
+
+    return [
+        AdminUserResponse(
+            id=admin.id,
+            email=admin.email,
+            full_name=admin.full_name,
+            role=admin.role,
+            is_active=admin.is_active,
+            is_super_admin=(admin.email.lower() == super_email),
+            created_at=admin.created_at.isoformat() if admin.created_at else "",
+        )
+        for admin in admins
+    ]
+
+
+async def create_admin_by_super_admin(
+    db: AsyncSession, data: CreateAdminRequest
+) -> AdminUserResponse:
+    """Create a new administrator account (Super Admin only)."""
+    clean_email = data.email.lower().strip()
+
+    existing = await db.execute(select(User).where(User.email == clean_email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user account with this email address already exists.",
+        )
+
+    new_admin = User(
+        email=clean_email,
+        password_hash=hash_password(data.password),
+        full_name=data.full_name.strip(),
+        role="admin",
+        is_active=True,
+    )
+    db.add(new_admin)
+    await db.flush()
+    await db.refresh(new_admin)
+
+    super_email = settings.SUPER_ADMIN_EMAIL.lower()
+    return AdminUserResponse(
+        id=new_admin.id,
+        email=new_admin.email,
+        full_name=new_admin.full_name,
+        role=new_admin.role,
+        is_active=new_admin.is_active,
+        is_super_admin=(new_admin.email.lower() == super_email),
+        created_at=new_admin.created_at.isoformat() if new_admin.created_at else "",
+    )
+
+
+async def update_admin_by_super_admin(
+    db: AsyncSession, admin_id: str, data: UpdateAdminRequest
+) -> AdminUserResponse:
+    """Update administrator account details or status (Super Admin only)."""
+    result = await db.execute(select(User).where(User.id == admin_id, User.role == "admin"))
+    admin = result.scalar_one_or_none()
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Administrator account not found.",
+        )
+
+    super_email = settings.SUPER_ADMIN_EMAIL.lower()
+    is_target_super_admin = (admin.email.lower() == super_email)
+
+    if is_target_super_admin and data.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Primary Super Admin account cannot be deactivated.",
+        )
+
+    if data.email is not None:
+        clean_email = data.email.lower().strip()
+        if clean_email != admin.email.lower():
+            if is_target_super_admin:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Primary Super Admin email address cannot be modified.",
+                )
+            # Check uniqueness
+            dup_res = await db.execute(
+                select(User).where(User.email == clean_email, User.id != admin.id)
+            )
+            if dup_res.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user account with this email address already exists.",
+                )
+            admin.email = clean_email
+
+    if data.full_name is not None:
+        admin.full_name = data.full_name.strip()
+
+    if data.is_active is not None:
+        admin.is_active = data.is_active
+
+    db.add(admin)
+    await db.flush()
+    await db.refresh(admin)
+
+    return AdminUserResponse(
+        id=admin.id,
+        email=admin.email,
+        full_name=admin.full_name,
+        role=admin.role,
+        is_active=admin.is_active,
+        is_super_admin=(admin.email.lower() == super_email),
+        created_at=admin.created_at.isoformat() if admin.created_at else "",
+    )
+
+
+async def delete_admin_by_super_admin(
+    db: AsyncSession, admin_id: str, current_admin: User
+) -> dict:
+    """Permanently delete an administrator account (Super Admin only)."""
+    result = await db.execute(select(User).where(User.id == admin_id, User.role == "admin"))
+    admin = result.scalar_one_or_none()
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Administrator account not found.",
+        )
+
+    super_email = settings.SUPER_ADMIN_EMAIL.lower()
+    if admin.email.lower() == super_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Primary Super Admin account cannot be deleted.",
+        )
+
+    if admin.id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own admin account.",
+        )
+
+    admin_name = admin.full_name
+    admin_email = admin.email
+    await db.delete(admin)
+    await db.flush()
+
+    return {
+        "message": f"Administrator '{admin_name}' ({admin_email}) deleted successfully.",
+        "id": admin_id,
+    }
+
+
+async def reset_admin_password_by_super_admin(
+    db: AsyncSession, admin_id: str, new_password: str
+) -> dict:
+    """Reset password for an administrator account (Super Admin only)."""
+    result = await db.execute(select(User).where(User.id == admin_id, User.role == "admin"))
+    admin = result.scalar_one_or_none()
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Administrator account not found.",
+        )
+
+    admin.password_hash = hash_password(new_password)
+    admin.otp_code = None
+    admin.otp_expiry = None
+    db.add(admin)
+    await db.flush()
+
+    return {"message": f"Password reset successfully for administrator {admin.full_name}."}
+
 
 

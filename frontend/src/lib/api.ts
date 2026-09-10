@@ -117,6 +117,28 @@ export interface UpdateTeacherData {
   is_active?: boolean;
 }
 
+export interface AdminUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  is_active: boolean;
+  is_super_admin: boolean;
+  created_at: string;
+}
+
+export interface CreateAdminData {
+  email: string;
+  password: string;
+  full_name: string;
+}
+
+export interface UpdateAdminData {
+  full_name?: string;
+  email?: string;
+  is_active?: boolean;
+}
+
 export interface AdminStudent {
   id: string;
   user_id?: string | null;
@@ -334,6 +356,24 @@ export const adminApi = {
 
   executeRestore: (data: ExecuteRestoreRequest) =>
     api.post<ExecuteRestoreResponse>("/admin/backup/execute-restore", data),
+
+  getAdmins: () =>
+    api.get<AdminUser[]>("/admin/admins"),
+
+  createAdmin: (data: CreateAdminData) =>
+    api.post<AdminUser>("/admin/admins", data),
+
+  updateAdmin: (adminId: string, data: UpdateAdminData) =>
+    api.put<AdminUser>(`/admin/admins/${adminId}`, data),
+
+  deleteAdmin: (adminId: string) =>
+    api.delete<{ message: string; id: string }>(`/admin/admins/${adminId}`),
+
+  resetAdminPassword: (adminId: string, newPassword: string) =>
+    api.post<{ message: string }>(
+      `/admin/admins/${adminId}/reset-password`,
+      { new_password: newPassword }
+    ),
 };
 
 

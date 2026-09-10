@@ -14,14 +14,6 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-const adminNav = [
-  { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { label: "Teachers", href: "/admin/teachers", icon: Users },
-  { label: "Students", href: "/admin/students", icon: GraduationCap },
-  { label: "Backup & Data", href: "/admin/backup", icon: Database },
-];
-
-
 interface AdminSidebarProps {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
@@ -33,6 +25,18 @@ export function AdminSidebar({
 }: AdminSidebarProps) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
+
+  const isSuperAdmin = user?.email?.toLowerCase() === "admin@studyverse.com";
+
+  const navItems = [
+    { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
+    ...(isSuperAdmin
+      ? [{ label: "Administrators", href: "/admin/administrators", icon: ShieldCheck }]
+      : []),
+    { label: "Teachers", href: "/admin/teachers", icon: Users },
+    { label: "Students", href: "/admin/students", icon: GraduationCap },
+    { label: "Backup & Data", href: "/admin/backup", icon: Database },
+  ];
 
   const handleNavClick = () => {
     if (onMobileClose) {
@@ -245,7 +249,7 @@ export function AdminSidebar({
             </div>
             <div className="admin-brand">
               <h2>StudyVerse</h2>
-              <p>Admin Portal</p>
+              <p>{isSuperAdmin ? "Super Admin" : "Admin Portal"}</p>
             </div>
           </div>
           <button
@@ -259,7 +263,7 @@ export function AdminSidebar({
         </div>
 
         <nav className="admin-nav">
-          {adminNav.map((item) => {
+          {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link

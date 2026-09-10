@@ -4,9 +4,20 @@ import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { adminApi } from "@/lib/api";
-import { Users, UserCheck, ArrowRight, UserPlus, GraduationCap, Database } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { Users, UserCheck, ArrowRight, UserPlus, GraduationCap, Database, ShieldCheck } from "lucide-react";
 
 export default function AdminDashboardPage() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.email?.toLowerCase() === "admin@studyverse.com";
+
+  const { data: admins = [], isLoading: isLoadingAdmins } = useQuery({
+    queryKey: ["admin-admins"],
+    queryFn: () => adminApi.getAdmins(),
+    select: (res) => res.data,
+    enabled: isSuperAdmin,
+  });
+
   const { data: teachers = [], isLoading: isLoadingTeachers } = useQuery({
     queryKey: ["admin-teachers"],
     queryFn: () => adminApi.getTeachers(),
@@ -19,6 +30,7 @@ export default function AdminDashboardPage() {
     select: (res) => res.data,
   });
 
+  const totalAdmins = admins.length;
   const totalTeachers = teachers.length;
   const activeTeachers = teachers.filter((t) => t.is_active).length;
   const totalStudents = students.length;
@@ -72,6 +84,7 @@ export default function AdminDashboardPage() {
           flex-shrink: 0;
         }
 
+        .stat-icon-wrapper.admins { background: rgba(139, 92, 246, 0.14); color: #8b5cf6; }
         .stat-icon-wrapper.teachers { background: var(--info-light); color: var(--info); }
         .stat-icon-wrapper.active { background: var(--success-light); color: var(--success); }
         .stat-icon-wrapper.students { background: var(--warning-light); color: var(--warning); }
@@ -178,12 +191,28 @@ export default function AdminDashboardPage() {
         animate={{ opacity: 1, y: 0 }}
         className="admin-header"
       >
-        <h1>Admin Control Panel</h1>
-        <p>Manage teachers, student accounts, credentials, and teacher assignments</p>
+        <h1>{isSuperAdmin ? "Super Admin Control Panel" : "Admin Control Panel"}</h1>
+        <p>
+          {isSuperAdmin
+            ? "Manage administrators, teachers, students, backup archives, and system privileges"
+            : "Manage teachers, student accounts, credentials, and teacher assignments"}
+        </p>
       </motion.div>
 
       {/* Stats */}
       <div className="stats-grid">
+        {isSuperAdmin && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }} className="stat-card">
+            <div className="stat-icon-wrapper admins">
+              <ShieldCheck size={24} />
+            </div>
+            <div>
+              <div className="stat-number">{isLoadingAdmins ? "..." : totalAdmins}</div>
+              <div className="stat-label">Administrators</div>
+            </div>
+          </motion.div>
+        )}
+
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="stat-card">
           <div className="stat-icon-wrapper teachers">
             <Users size={24} />
@@ -217,6 +246,32 @@ export default function AdminDashboardPage() {
 
       {/* Quick Actions Cards Grid */}
       <div className="cards-grid">
+        {isSuperAdmin && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className="quick-actions-card">
+            <div>
+              <div className="quick-actions-header">
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <h3>Administrator Accounts</h3>
+                  <span style={{ fontSize: 10, background: "#8b5cf6", color: "#fff", padding: "2px 6px", borderRadius: 4, fontWeight: 700, textTransform: "uppercase" }}>Primary Super Admin</span>
+                </div>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>
+                  Provision secondary administrator accounts, configure access status, and reset admin passwords.
+                </p>
+              </div>
+              <div style={{ padding: "8px 0 20px 0", color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.6 }}>
+                <p>• Create & manage secondary administrators.</p>
+                <p>• Securely reset admin credentials.</p>
+                <p>• Enable or suspend administrator access.</p>
+              </div>
+            </div>
+            <Link href="/admin/administrators" className="action-link-btn" style={{ background: "#8b5cf6" }}>
+              <ShieldCheck size={16} />
+              <span>Manage Administrators</span>
+              <ArrowRight size={14} />
+            </Link>
+          </motion.div>
+        )}
+
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="quick-actions-card">
           <div>
             <div className="quick-actions-header">

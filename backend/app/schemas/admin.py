@@ -78,3 +78,33 @@ class UpdateStudentStatusRequest(BaseModel):
     is_active: bool
 
 
+# ─── ADMINISTRATOR MANAGEMENT (SUPER ADMIN) ───────────
+
+class CreateAdminRequest(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+
+
+class UpdateAdminRequest(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    is_active: Optional[bool] = None
+
+
+class UpdateAdminStatusRequest(BaseModel):
+    is_active: bool
+
+
+class AdminUserResponse(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    role: str = "admin"
+    is_active: bool
+    is_super_admin: bool = False
+    created_at: str
+
+    model_config = {"from_attributes": True}
+
+

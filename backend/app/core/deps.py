@@ -6,7 +6,10 @@ from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
 
+from app.core.config import get_settings
+
 security_scheme = HTTPBearer()
+settings = get_settings()
 
 
 async def get_current_user(
@@ -57,6 +60,17 @@ async def get_current_admin(
             detail="Admin access required",
         )
     return current_user
+
+
+async def get_current_super_admin(
+    admin: User = Depends(get_current_admin),
+) -> User:
+    if admin.email.lower() != settings.SUPER_ADMIN_EMAIL.lower():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super Admin privileges required (admin@studyverse.com only)",
+        )
+    return admin
 
 
 async def get_current_teacher(

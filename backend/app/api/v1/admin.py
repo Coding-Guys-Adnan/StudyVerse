@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, status, BackgroundTasks, UploadFi
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.core.deps import get_current_admin
+from app.core.deps import get_current_admin, get_current_super_admin
 from app.models.user import User
 from app.schemas.admin import (
     CreateTeacherRequest,
@@ -14,6 +14,9 @@ from app.schemas.admin import (
     UpdateStudentAdminRequest,
     UpdateStudentStatusRequest,
     AssignedTeacherInfo,
+    CreateAdminRequest,
+    UpdateAdminRequest,
+    AdminUserResponse,
 )
 from app.schemas.backup import (
     BackupStatsResponse,
@@ -260,6 +263,64 @@ async def execute_restore_endpoint(
         confirmation=data.confirmation,
         db=db,
     )
+
+
+# ─── ADMINISTRATOR MANAGEMENT (SUPER ADMIN ONLY) ───────
+
+@router.get("/admins", response_model=list[AdminUserResponse])
+async def get_all_admins(
+    super_admin: User = Depends(get_current_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all administrators in the system (Super Admin only)."""
+    return await admin_service.list_admin_users(db)
+
+
+@router.post(
+    "/admins",
+    response_model=AdminUserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_new_admin(
+    data: CreateAdminRequest,
+    super_admin: User = Depends(get_current_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new secondary administrator account (Super Admin only)."""
+    return await admin_service.create_admin_by_super_admin(db, data)
+
+
+@router.put("/admins/{admin_id}", response_model=AdminUserResponse)
+async def update_admin_details(
+    admin_id: str,
+    data: UpdateAdminRequest,
+    super_admin: User = Depends(get_current_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update administrator name, email, or active status (Super Admin only)."""
+    return await admin_service.update_admin_by_super_admin(db, admin_id, data)
+
+
+@router.delete("/admins/{admin_id}")
+async def delete_admin_account(
+    admin_id: str,
+    super_admin: User = Depends(get_current_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete an administrator account (Super Admin only). Cannot delete self or Super Admin."""
+    return await admin_service.delete_admin_by_super_admin(db, admin_id, super_admin)
+
+
+@router.post("/admins/{admin_id}/reset-password")
+async def reset_admin_password(
+    admin_id: str,
+    data: AdminResetPasswordRequest,
+    super_admin: User = Depends(get_current_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset password for an administrator account (Super Admin only)."""
+    return await admin_service.reset_admin_password_by_super_admin(db, admin_id, data.new_password)
+
 
 
 
