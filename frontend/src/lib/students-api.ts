@@ -57,6 +57,41 @@ export interface DashboardStats {
   ai_plans_generated: number;
 }
 
+export interface ModulePermissions {
+  can_edit: boolean;
+  can_import: boolean;
+}
+
+export interface CalendarPermissions {
+  can_edit: boolean;
+  can_import: boolean;
+}
+
+export interface FilesPermissions {
+  can_import: boolean;
+  can_edit: boolean;
+}
+
+export interface StudentPermissions {
+  syllabus: ModulePermissions;
+  homework: ModulePermissions;
+  calendar: CalendarPermissions;
+  tests: ModulePermissions;
+  files: FilesPermissions;
+}
+
+export interface StudentPermissionsResponse {
+  student_id: string;
+  teacher_id: string;
+  permissions: StudentPermissions;
+}
+
+export interface StudentEffectivePermissionsResponse {
+  student_id: string;
+  effective_permissions: StudentPermissions;
+  teacher_permissions: Record<string, StudentPermissions>;
+}
+
 // ─── API ────────────────────────────────────────────────
 
 export const studentsApi = {
@@ -74,4 +109,10 @@ export const studentsApi = {
   delete: (id: string) => api.delete(`/students/${id}`),
 
   dashboardStats: () => api.get<DashboardStats>("/dashboard/stats"),
+
+  getPermissions: (studentId: string) =>
+    api.get<StudentPermissionsResponse>(`/students/${studentId}/permissions`),
+
+  updatePermissions: (studentId: string, permissions: StudentPermissions) =>
+    api.put<StudentPermissionsResponse>(`/students/${studentId}/permissions`, { permissions }),
 };

@@ -19,6 +19,7 @@ import {
   Eye,
 } from "lucide-react";
 import { academicApi } from "@/lib/academic-api";
+import { getFileUrl } from "@/lib/api";
 import { formatDisplayDate } from "@/lib/date-utils";
 
 interface HomeworkTabProps {
@@ -126,6 +127,31 @@ export function HomeworkTab({ studentId }: HomeworkTabProps) {
       lowerName.endsWith(".jpeg") ||
       lowerName.endsWith(".webp")
     );
+  };
+
+  const handleOpenDocument = (url: string, name?: string | null) => {
+    let rawUrl = url?.trim() || "";
+    if (rawUrl.includes("data:")) {
+      rawUrl = rawUrl.substring(rawUrl.indexOf("data:"));
+      try {
+        const parts = rawUrl.split(",");
+        const mimeMatch = parts[0].match(/:(.*?);/);
+        const mimeType = mimeMatch ? mimeMatch[1] : "application/pdf";
+        const b64Data = (parts[1] || parts[0]).replace(/[\r\n\s]/g, "");
+        const binaryStr = atob(b64Data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: mimeType });
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, "_blank");
+        return;
+      } catch {
+        // Fallback
+      }
+    }
+    window.open(getFileUrl(rawUrl), "_blank");
   };
 
   return (
@@ -612,11 +638,11 @@ export function HomeworkTab({ studentId }: HomeworkTabProps) {
                       <div>
                         <div
                           className="hw-image-preview-box"
-                          onClick={() => setPreviewModalImage(hw.attachment_url || null)}
+                          onClick={() => setPreviewModalImage(getFileUrl(hw.attachment_url!) || null)}
                           title="Click to view full image"
                         >
                           <img
-                            src={hw.attachment_url}
+                            src={getFileUrl(hw.attachment_url)}
                             alt={hw.attachment_name || "Homework attachment"}
                           />
                         </div>
@@ -627,16 +653,15 @@ export function HomeworkTab({ studentId }: HomeworkTabProps) {
                         <span className="attachment-name">
                           {hw.attachment_name || "Attached Document (PDF)"}
                         </span>
-                        <a
-                          href={hw.attachment_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          download={hw.attachment_name || "homework_document.pdf"}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDocument(hw.attachment_url!, hw.attachment_name)}
                           className="attachment-link"
+                          style={{ background: "none", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
                         >
                           <ExternalLink size={13} />
-                          View PDF
-                        </a>
+                          View Document
+                        </button>
                       </div>
                     )}
                   </div>

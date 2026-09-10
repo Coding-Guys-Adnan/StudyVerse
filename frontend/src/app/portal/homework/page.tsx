@@ -1,7 +1,5 @@
-"use client";
-
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   Calendar,
@@ -14,11 +12,87 @@ import {
   Eye,
   X,
   Image as ImageIcon,
+  Plus,
+  Trash2,
+  Paperclip,
+  Upload,
+  Lock,
 } from "lucide-react";
 import { portalApi } from "@/lib/portal-api";
+import { getFileUrl } from "@/lib/api";
 import { formatDisplayDate } from "@/lib/date-utils";
 
 export default function StudentHomeworkPage() {
+  const queryClient = useQueryClient();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newSubject, setNewSubject] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [newDueDate, setNewDueDate] = useState("");
+  const [newAttachmentName, setNewAttachmentName] = useState("");
+  const [newAttachmentUrl, setNewAttachmentUrl] = useState("");
+  const [uploadingFile, setUploadingFile] = useState(false);
+
+  const { data: permData } = useQuery({
+    queryKey: ["portal-permissions"],
+    queryFn: () => portalApi.getPermissions(),
+    select: (res) => res.data,
+  });
+
+  const canEdit = !!permData?.effective_permissions?.homework?.can_edit;
+  const canImport = !!permData?.effective_permissions?.homework?.can_import;
+
+  const createMutation = useMutation({
+    mutationFn: (payload: {
+      subject: string;
+      title: string;
+      description?: string;
+      due_date?: string;
+      status: string;
+      attachment_name?: string;
+      attachment_url?: string;
+    }) => portalApi.createHomework(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-homework"] });
+      setShowAddModal(false);
+      setNewSubject("");
+      setNewTitle("");
+      setNewDesc("");
+      setNewDueDate("");
+      setNewAttachmentName("");
+      setNewAttachmentUrl("");
+    },
+  });
+
+  const toggleStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      portalApi.updateHomework(id, { status: status as any }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-homework"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => portalApi.deleteHomework(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-homework"] });
+    },
+  });
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingFile(true);
+      const res = await portalApi.uploadHomeworkAttachment(file);
+      setNewAttachmentName(res.data.filename);
+      setNewAttachmentUrl(res.data.url);
+    } catch (err) {
+      console.error("Upload error", err);
+    } finally {
+      setUploadingFile(false);
+    }
+  };
   const [previewModalFile, setPreviewModalFile] = useState<{
     url: string;
     name: string;
@@ -36,7 +110,9 @@ export default function StudentHomeworkPage() {
     let rawUrl = previewModalFile.url?.trim() || "";
     if (!rawUrl) return;
 
-    if (rawUrl.startsWith("JVBERi")) {
+    if (rawUrl.includes("data:")) {
+      rawUrl = rawUrl.substring(rawUrl.indexOf("data:"));
+    } else if (rawUrl.startsWith("JVBERi")) {
       rawUrl = `data:application/pdf;base64,${rawUrl}`;
     }
 
@@ -62,9 +138,43 @@ export default function StudentHomeworkPage() {
         setPdfBlobUrl(rawUrl);
       }
     } else {
-      setPdfBlobUrl(rawUrl);
+      setPdfBlobUrl(getFileUrl(rawUrl));
     }
   }, [previewModalFile]);
+
+  const handleDownloadFile = () => {
+    if (!previewModalFile) return;
+    let downloadUrl = pdfBlobUrl;
+    if (!downloadUrl) {
+      let rawUrl = previewModalFile.url?.trim() || "";
+      if (rawUrl.includes("data:")) {
+        rawUrl = rawUrl.substring(rawUrl.indexOf("data:"));
+        try {
+          const parts = rawUrl.split(",");
+          const mimeMatch = parts[0].match(/:(.*?);/);
+          const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+          const b64Data = (parts[1] || parts[0]).replace(/[\r\n\s]/g, "");
+          const binaryStr = atob(b64Data);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: mimeType });
+          downloadUrl = URL.createObjectURL(blob);
+        } catch {
+          downloadUrl = rawUrl;
+        }
+      } else {
+        downloadUrl = getFileUrl(rawUrl);
+      }
+    }
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = previewModalFile.name || "document.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   const { data: homeworkList = [], isLoading } = useQuery({
     queryKey: ["portal-homework"],
@@ -100,10 +210,14 @@ export default function StudentHomeworkPage() {
   const getSanitizedPdfUrl = (url?: string | null) => {
     if (!url) return "";
     let clean = url.trim();
-    if (clean.startsWith("JVBERi")) {
+    if (clean.includes("data:")) {
+      clean = clean.substring(clean.indexOf("data:"));
+    } else if (clean.startsWith("JVBERi")) {
       clean = `data:application/pdf;base64,${clean}`;
     } else if (clean.startsWith("data:")) {
       clean = clean.replace(/^data:[^;]+;base64,/, "data:application/pdf;base64,");
+    } else {
+      clean = getFileUrl(clean);
     }
     return clean;
   };
@@ -190,9 +304,35 @@ export default function StudentHomeworkPage() {
         }
       `}</style>
 
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>Homework Assignments</h1>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>View tasks assigned to you by your tutor</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>Homework Assignments</h1>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+            {canEdit ? "Manage and track your study assignments & personal homework tasks" : "View tasks assigned to you by your tutor"}
+          </p>
+        </div>
+
+        {canEdit && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "9px 18px",
+              borderRadius: "var(--radius-sm, 8px)",
+              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+              color: "#fff",
+              border: "none",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)",
+            }}
+          >
+            <Plus size={16} /> Add Personal Task
+          </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -302,44 +442,84 @@ export default function StudentHomeworkPage() {
                 )}
               </div>
 
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  padding: "6px 12px",
-                  borderRadius: 6,
-                  background:
-                    hw.status === "completed"
-                      ? "var(--success-light)"
-                      : hw.status === "incomplete"
-                      ? "var(--danger-light)"
-                      : "var(--bg-tertiary)",
-                  color:
-                    hw.status === "completed"
-                      ? "var(--success)"
-                      : hw.status === "incomplete"
-                      ? "var(--danger)"
-                      : "var(--text-secondary)",
-                }}
-              >
-                {hw.status === "completed" ? (
-                  <>
-                    <CheckCircle2 size={14} />
-                    Completed
-                  </>
-                ) : hw.status === "incomplete" ? (
-                  <>
-                    <AlertCircle size={14} />
-                    Incomplete
-                  </>
-                ) : (
-                  <>
-                    <Clock size={14} />
-                    Assigned
-                  </>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (canEdit) {
+                      toggleStatusMutation.mutate({
+                        id: hw.id,
+                        status: hw.status === "completed" ? "assigned" : "completed",
+                      });
+                    }
+                  }}
+                  title={canEdit ? "Click to toggle completion status" : undefined}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    padding: "6px 12px",
+                    borderRadius: 6,
+                    border: "none",
+                    cursor: canEdit ? "pointer" : "default",
+                    background:
+                      hw.status === "completed"
+                        ? "var(--success-light)"
+                        : hw.status === "incomplete"
+                        ? "var(--danger-light)"
+                        : "var(--bg-tertiary)",
+                    color:
+                      hw.status === "completed"
+                        ? "var(--success)"
+                        : hw.status === "incomplete"
+                        ? "var(--danger)"
+                        : "var(--text-secondary)",
+                  }}
+                >
+                  {hw.status === "completed" ? (
+                    <>
+                      <CheckCircle2 size={14} />
+                      Completed
+                    </>
+                  ) : hw.status === "incomplete" ? (
+                    <>
+                      <AlertCircle size={14} />
+                      Incomplete
+                    </>
+                  ) : (
+                    <>
+                      <Clock size={14} />
+                      Assigned
+                    </>
+                  )}
+                </button>
+
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm("Delete this personal homework task?")) {
+                        deleteMutation.mutate(hw.id);
+                      }
+                    }}
+                    title="Delete homework task"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 32,
+                      height: 32,
+                      borderRadius: 6,
+                      background: "rgba(239, 68, 68, 0.1)",
+                      border: "none",
+                      color: "#ef4444",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 )}
               </div>
             </div>
@@ -414,9 +594,9 @@ export default function StudentHomeworkPage() {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <a
-                  href={previewModalFile.url}
-                  download={previewModalFile.name}
+                <button
+                  type="button"
+                  onClick={handleDownloadFile}
                   className="attachment-link"
                   style={{
                     display: "inline-flex",
@@ -426,6 +606,8 @@ export default function StudentHomeworkPage() {
                     fontSize: 12.5,
                     fontWeight: 600,
                     borderRadius: 6,
+                    border: "none",
+                    cursor: "pointer",
                     textDecoration: "none",
                     background: "var(--brand-500)",
                     color: "#ffffff",
@@ -433,7 +615,7 @@ export default function StudentHomeworkPage() {
                 >
                   <Download size={14} />
                   Download
-                </a>
+                </button>
                 <button
                   style={{
                     background: "none",
@@ -476,12 +658,204 @@ export default function StudentHomeworkPage() {
                 />
               ) : (
                 <img
-                  src={previewModalFile.url}
+                  src={getFileUrl(previewModalFile.url)}
                   alt={previewModalFile.name}
                   style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 6 }}
                 />
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Task Modal */}
+      {showAddModal && (
+        <div
+          className="image-modal-overlay"
+          onClick={() => setShowAddModal(false)}
+        >
+          <div
+            className="image-modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "90vw", maxWidth: 520, background: "var(--card-bg)", padding: 24 }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+                Add Personal Homework Task
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                createMutation.mutate({
+                  subject: newSubject,
+                  title: newTitle,
+                  description: newDesc || undefined,
+                  due_date: newDueDate || undefined,
+                  status: "assigned",
+                  attachment_name: newAttachmentName || undefined,
+                  attachment_url: newAttachmentUrl || undefined,
+                });
+              }}
+              style={{ display: "flex", flexDirection: "column", gap: 14 }}
+            >
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  Subject *
+                </label>
+                <input
+                  required
+                  placeholder="e.g. Mathematics, Science"
+                  value={newSubject}
+                  onChange={(e) => setNewSubject(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  Task Title *
+                </label>
+                <input
+                  required
+                  placeholder="e.g. Solve Chapter 4 Exercises 1-10"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  Description / Study Notes
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Optional details or reminder notes..."
+                  value={newDesc}
+                  onChange={(e) => setNewDesc(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    resize: "vertical",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  Target Due Date
+                </label>
+                <input
+                  type="date"
+                  value={newDueDate}
+                  onChange={(e) => setNewDueDate(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+
+              {canImport && (
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                    Attachment (PDF or Image)
+                  </label>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: "1px dashed var(--border-color)",
+                      background: "var(--bg-tertiary)",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      color: "var(--text-secondary)",
+                    }}
+                  >
+                    <Upload size={15} />
+                    {uploadingFile ? "Uploading..." : newAttachmentName || "Choose file to upload"}
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onChange={handleFileUpload}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border-color)",
+                    background: "transparent",
+                    color: "var(--text-secondary)",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createMutation.isPending || uploadingFile}
+                  style={{
+                    padding: "8px 20px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: "var(--brand-500)",
+                    color: "#ffffff",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {createMutation.isPending ? "Adding..." : "Add Task"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

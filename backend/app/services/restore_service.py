@@ -86,8 +86,14 @@ def normalize_file_url_to_local(url_or_path: Optional[str], folder: str) -> Opti
     if not url_or_path:
         return url_or_path
 
+    # Data URI (base64 inline file) - preserve intact
+    if url_or_path.startswith("data:"):
+        return url_or_path
+
     # Already local
     if url_or_path.startswith("/uploads/"):
+        if "data:" in url_or_path:
+            return url_or_path[url_or_path.index("data:"):]
         return url_or_path
 
     # Remote Supabase URL: e.g. https://xxx.supabase.co/storage/v1/object/public/studyverse-uploads/syllabus/123_abc.pdf
@@ -98,6 +104,8 @@ def normalize_file_url_to_local(url_or_path: Optional[str], folder: str) -> Opti
 
     # Relative path
     rel = url_or_path.lstrip("/")
+    if "data:" in rel:
+        return rel[rel.index("data:"):]
     if not rel.startswith("uploads/"):
         return f"/uploads/{folder}/{rel}"
     return f"/{rel}"

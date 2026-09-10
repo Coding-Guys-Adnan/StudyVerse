@@ -1,8 +1,8 @@
-"use client";
-
 import { useAuth } from "@/lib/auth-context";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import { portalApi } from "@/lib/portal-api";
 import {
   Calendar,
   BookOpen,
@@ -15,17 +15,18 @@ import {
   GraduationCap,
   Megaphone,
   X,
+  Edit2,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const studentNav = [
-  { label: "Calendar", href: "/portal", icon: Calendar },
+  { label: "Calendar", href: "/portal", icon: Calendar, moduleKey: "calendar" },
   { label: "Announcements", href: "/portal/announcements", icon: Megaphone },
-  { label: "Homework", href: "/portal/homework", icon: BookOpen },
-  { label: "Syllabus", href: "/portal/syllabus", icon: FileText },
+  { label: "Homework", href: "/portal/homework", icon: BookOpen, moduleKey: "homework" },
+  { label: "Syllabus", href: "/portal/syllabus", icon: FileText, moduleKey: "syllabus" },
   { label: "AI Recommendations", href: "/portal/ai", icon: Sparkles },
-  { label: "Test Marks", href: "/portal/tests", icon: BarChart3 },
-  { label: "Files", href: "/portal/files", icon: FolderOpen },
+  { label: "Test Marks", href: "/portal/tests", icon: BarChart3, moduleKey: "tests" },
+  { label: "Files", href: "/portal/files", icon: FolderOpen, moduleKey: "files" },
   { label: "My Profile", href: "/portal/profile", icon: User },
 ];
 
@@ -40,6 +41,52 @@ export function StudentSidebar({
 }: StudentSidebarProps) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
+
+  const { data: permData } = useQuery({
+    queryKey: ["portal-permissions"],
+    queryFn: () => portalApi.getPermissions(),
+    select: (res) => res.data,
+  });
+
+  const eff = permData?.effective_permissions;
+
+  // Determine overall access mode
+  const hasAnyEdit = !!(
+    eff?.syllabus.can_edit ||
+    eff?.homework.can_edit ||
+    eff?.calendar.can_edit ||
+    eff?.tests.can_edit
+  );
+  const hasAnyImport = !!(
+    eff?.syllabus.can_import ||
+    eff?.homework.can_import ||
+    eff?.tests.can_import ||
+    eff?.files.can_import
+  );
+
+  const isFullControl = !!(
+    eff?.syllabus.can_edit &&
+    eff?.syllabus.can_import &&
+    eff?.homework.can_edit &&
+    eff?.homework.can_import &&
+    eff?.calendar.can_edit &&
+    eff?.tests.can_edit &&
+    eff?.tests.can_import &&
+    eff?.files.can_import
+  );
+
+  let badgeLabel = "👁 View Only";
+  let badgeClass = "badge-readonly";
+  if (isFullControl) {
+    badgeLabel = "🚀 Full Access";
+    badgeClass = "badge-full";
+  } else if (hasAnyEdit && hasAnyImport) {
+    badgeLabel = "⚡ Collaborator";
+    badgeClass = "badge-collab";
+  } else if (hasAnyEdit || hasAnyImport) {
+    badgeLabel = "✏️ Editor";
+    badgeClass = "badge-editor";
+  }
 
   const handleNavClick = () => {
     if (onMobileClose) {
@@ -284,7 +331,7 @@ export function StudentSidebar({
             border-color: transparent;
           }
 
-          .readonly-badge {
+          .access-badge {
             display: inline-flex;
             align-items: center;
             gap: 4px;
@@ -294,9 +341,33 @@ export function StudentSidebar({
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            margin: 0 12px 8px;
+            width: fit-content;
+            transition: all 0.2s ease;
+          }
+
+          .badge-readonly {
             background: var(--bg-tertiary);
             color: var(--text-tertiary);
-            margin: 0 12px 8px;
+            border: 1px solid var(--border-color);
+          }
+
+          .badge-editor {
+            background: rgba(59, 130, 246, 0.12);
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.25);
+          }
+
+          .badge-collab {
+            background: rgba(139, 92, 246, 0.12);
+            color: #8b5cf6;
+            border: 1px solid rgba(139, 92, 246, 0.25);
+          }
+
+          .badge-full {
+            background: rgba(16, 185, 129, 0.12);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.25);
           }
         `}</style>
 
@@ -324,11 +395,19 @@ export function StudentSidebar({
         {/* Navigation */}
         <nav className="student-nav">
           <span className="student-nav-label">Your Space</span>
-          <div className="readonly-badge">👁 View Only</div>
+          <div className={`access-badge ${badgeClass}`}>{badgeLabel}</div>
           {studentNav.map((item) => {
             const isActive =
               pathname === item.href ||
               (item.href !== "/portal" && pathname.startsWith(item.href));
+
+            const isPermitted =
+              item.moduleKey === "calendar" ? eff?.calendar.can_edit :
+              item.moduleKey === "homework" ? (eff?.homework.can_edit || eff?.homework.can_import) :
+              item.moduleKey === "syllabus" ? (eff?.syllabus.can_edit || eff?.syllabus.can_import) :
+              item.moduleKey === "tests" ? (eff?.tests.can_edit || eff?.tests.can_import) :
+              item.moduleKey === "files" ? eff?.files.can_import : false;
+
             return (
               <Link
                 key={item.href}
@@ -337,7 +416,22 @@ export function StudentSidebar({
                 onClick={handleNavClick}
               >
                 <item.icon size={20} />
-                <span>{item.label}</span>
+                <span style={{ flex: 1 }}>{item.label}</span>
+                {isPermitted && (
+                  <span
+                    title="You have edit/import access in this module"
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#10b981",
+                      background: "rgba(16, 185, 129, 0.15)",
+                      padding: "1px 6px",
+                      borderRadius: 6,
+                    }}
+                  >
+                    Edit
+                  </span>
+                )}
               </Link>
             );
           })}

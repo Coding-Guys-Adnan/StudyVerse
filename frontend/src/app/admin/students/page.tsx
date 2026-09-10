@@ -222,6 +222,7 @@ export default function AdminStudentsPage() {
           max-width: 1100px;
           margin: 0 auto;
           padding-bottom: 40px;
+          width: 100%;
         }
 
         .header-row {
@@ -234,7 +235,7 @@ export default function AdminStudentsPage() {
         }
 
         .header-row h1 {
-          font-size: 24px;
+          font-size: clamp(20px, 4vw, 24px);
           font-weight: 700;
           color: var(--text-primary);
           letter-spacing: -0.5px;
@@ -316,13 +317,15 @@ export default function AdminStudentsPage() {
           background: var(--card-bg);
           border-radius: var(--radius, 12px);
           border: 1px solid var(--border-color);
-          overflow: hidden;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
           box-shadow: var(--shadow-sm);
+          width: 100%;
         }
 
         .students-table {
           width: 100%;
-          min-width: 850px;
+          min-width: 820px;
           border-collapse: collapse;
           text-align: left;
         }
@@ -651,6 +654,58 @@ export default function AdminStudentsPage() {
           gap: 8px;
           margin-bottom: 20px;
           flex-wrap: wrap;
+        }
+
+        @media (max-width: 768px) {
+          .filters-card {
+            padding: 14px;
+            gap: 10px;
+          }
+
+          .search-wrapper {
+            min-width: 100%;
+            flex: 1 1 100%;
+          }
+
+          .filter-select {
+            flex: 1 1 calc(50% - 6px);
+            min-width: 130px;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .header-row {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+          }
+
+          .filter-select {
+            flex: 1 1 100%;
+            width: 100%;
+          }
+
+          .modal-overlay {
+            padding: 10px;
+          }
+
+          .modal-content {
+            border-radius: 12px;
+            max-height: 92vh;
+          }
+
+          .modal-header {
+            padding: 14px 16px;
+          }
+
+          .modal-body {
+            padding: 16px;
+          }
+
+          .add-teacher-row {
+            flex-direction: column;
+            align-items: stretch;
+          }
         }
       `}</style>
 

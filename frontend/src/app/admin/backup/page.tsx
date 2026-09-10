@@ -330,7 +330,7 @@ export default function AdminBackupPage() {
         }
 
         .header-title-area h1 {
-          font-size: 26px;
+          font-size: clamp(20px, 4vw, 26px);
           font-weight: 700;
           color: var(--text-primary);
           letter-spacing: -0.5px;
@@ -340,7 +340,7 @@ export default function AdminBackupPage() {
         }
 
         .header-title-area p {
-          font-size: 14px;
+          font-size: 13px;
           color: var(--text-secondary);
           margin-top: 4px;
         }
@@ -824,20 +824,15 @@ export default function AdminBackupPage() {
           gap: 12px;
           padding-top: 16px;
           border-top: 1px solid var(--border-color);
+          flex-wrap: wrap;
         }
 
         /* Standard Action Grid */
         .actions-grid {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
           gap: 20px;
           margin-bottom: 32px;
-        }
-
-        @media (max-width: 960px) {
-          .actions-grid {
-            grid-template-columns: 1fr;
-          }
         }
 
         .action-card {
@@ -1217,6 +1212,41 @@ export default function AdminBackupPage() {
           align-items: center;
           justify-content: flex-end;
           gap: 12px;
+        }
+
+        @media (max-width: 640px) {
+          .page-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+          }
+
+          .refresh-btn {
+            width: 100%;
+            justify-content: center;
+          }
+
+          .restore-hub-card {
+            padding: 16px;
+          }
+
+          .dropzone-box {
+            padding: 24px 14px;
+          }
+
+          .modal-card {
+            padding: 20px;
+          }
+
+          .modal-actions {
+            flex-direction: column-reverse;
+            align-items: stretch;
+          }
+
+          .modal-actions button {
+            width: 100%;
+            justify-content: center;
+          }
         }
       `}</style>
 

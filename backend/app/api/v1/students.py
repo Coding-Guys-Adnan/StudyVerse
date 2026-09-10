@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.core.deps import get_current_teacher
+from app.core.deps import get_current_teacher, get_current_user
 from app.models.user import User
 from app.schemas.student import (
     StudentCreate,
@@ -10,6 +10,10 @@ from app.schemas.student import (
     StudentListResponse,
     DashboardStats,
 )
+from app.schemas.student_teacher import (
+    StudentPermissionsUpdate,
+    StudentPermissionsResponse,
+)
 from app.services.student_service import (
     list_students,
     create_student,
@@ -17,6 +21,10 @@ from app.services.student_service import (
     update_student,
     delete_student,
     get_dashboard_stats,
+)
+from app.services.permission_service import (
+    get_teacher_student_permissions,
+    update_teacher_student_permissions,
 )
 
 router = APIRouter(prefix="/students", tags=["Students"])
@@ -72,6 +80,40 @@ async def delete_student_by_id(
 ):
     """Delete a student."""
     return await delete_student(db, teacher, student_id)
+
+
+@router.get("/{student_id}/permissions", response_model=StudentPermissionsResponse)
+async def get_student_permissions(
+    student_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get permissions granted to a student by the current teacher (or admin)."""
+    if current_user.role not in ("teacher", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Teacher or admin access required",
+        )
+    return await get_teacher_student_permissions(db, student_id, current_user)
+
+
+@router.put("/{student_id}/permissions", response_model=StudentPermissionsResponse)
+async def update_student_permissions(
+    student_id: str,
+    data: StudentPermissionsUpdate,
+    target_teacher_id: str | None = Query(None, description="Admin only: target teacher ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update permissions granted to a student by the current teacher (or admin)."""
+    if current_user.role not in ("teacher", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Teacher or admin access required",
+        )
+    return await update_teacher_student_permissions(
+        db, student_id, current_user, data.permissions, target_teacher_id
+    )
 
 
 # ─── Dashboard ───────────────────────────────────────────

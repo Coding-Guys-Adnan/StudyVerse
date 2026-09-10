@@ -138,6 +138,8 @@ async def upsert_daily_plan(
             existing.topics_to_teach = data.topics_to_teach
         if data.notes is not None:
             existing.notes = data.notes
+        if data.actually_taught is not None:
+            existing.actually_taught = data.actually_taught
         await db.flush()
         await db.refresh(existing)
         return DailyPlanResponse.model_validate(existing)
@@ -147,6 +149,7 @@ async def upsert_daily_plan(
         date=data.date,
         topics_to_teach=data.topics_to_teach,
         notes=data.notes,
+        actually_taught=data.actually_taught,
     )
     db.add(plan)
     await db.flush()

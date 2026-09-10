@@ -32,6 +32,7 @@ class DailyPlan(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False)
     topics_to_teach: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actually_taught: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class CalendarEvent(Base):

@@ -147,11 +147,13 @@ class DailyPlanCreate(BaseModel):
     date: date
     topics_to_teach: Optional[str] = None
     notes: Optional[str] = None
+    actually_taught: Optional[str] = None
 
 
 class DailyPlanUpdate(BaseModel):
     topics_to_teach: Optional[str] = None
     notes: Optional[str] = None
+    actually_taught: Optional[str] = None
 
 
 class DailyPlanResponse(BaseModel):
@@ -160,6 +162,7 @@ class DailyPlanResponse(BaseModel):
     date: date
     topics_to_teach: Optional[str] = None
     notes: Optional[str] = None
+    actually_taught: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

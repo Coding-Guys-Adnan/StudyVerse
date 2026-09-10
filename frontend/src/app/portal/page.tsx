@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
@@ -18,16 +18,66 @@ import {
   Megaphone,
   ArrowRight,
   Calendar as CalendarIcon,
+  Maximize2,
+  Eye,
+  FileText,
+  Sparkles,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { portalApi, type CalendarDayData } from "@/lib/portal-api";
 import { formatLocalDateToISO, formatDisplayDate } from "@/lib/date-utils";
+import { PlanTextModal } from "@/components/calendar/plan-text-modal";
 
 export default function StudentCalendarPage() {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
 
+  // Center Popup Modal State for Full Text View (matches teacher portion)
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    field: "topics" | "actuallyTaught" | "notes" | "all";
+    value: string;
+  }>({
+    isOpen: false,
+    title: "",
+    field: "topics",
+    value: "",
+  });
+
+  const openModal = (
+    title: string,
+    field: "topics" | "actuallyTaught" | "notes" | "all",
+    currentVal: string
+  ) => {
+    setModalState({
+      isOpen: true,
+      title,
+      field,
+      value: currentVal,
+    });
+  };
+
+  const queryClient = useQueryClient();
+
+  // Event modal state
+  const [showAddEventModal, setShowAddEventModal] = useState(false);
+  const [newEventTitle, setNewEventTitle] = useState("");
+  const [newEventDesc, setNewEventDesc] = useState("");
+  const [newEventType, setNewEventType] = useState("reminder");
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
+
+  // ─── Query Permissions ──────────────────────────────────
+  const { data: permData } = useQuery({
+    queryKey: ["portal-permissions"],
+    queryFn: () => portalApi.getPermissions(),
+    select: (res) => res.data,
+  });
+
+  const canEditCalendar = !!permData?.effective_permissions?.calendar?.can_edit;
 
   // ─── Query Announcements Widget ──────────────────────────
   const { data: announcements = [] } = useQuery({
@@ -42,6 +92,28 @@ export default function StudentCalendarPage() {
     queryKey: ["portal-calendar", year, month],
     queryFn: () => portalApi.getCalendarMonth(year, month),
     select: (res) => res.data,
+  });
+
+  const createEventMutation = useMutation({
+    mutationFn: (data: { event_date: string; title: string; description?: string; event_type?: string }) =>
+      portalApi.createCalendarEvent(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-calendar", year, month] });
+      setShowAddEventModal(false);
+      setNewEventTitle("");
+      setNewEventDesc("");
+    },
+    onError: (err) => {
+      console.error("Failed to create event", err);
+      alert("Failed to create event. Please try again.");
+    },
+  });
+
+  const deleteEventMutation = useMutation({
+    mutationFn: (eventId: string) => portalApi.deleteCalendarEvent(eventId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-calendar", year, month] });
+    },
   });
 
   // ─── Grid Calculations ──────────────────────────────────
@@ -344,20 +416,141 @@ export default function StudentCalendarPage() {
           color: var(--danger);
         }
 
-        .portal-topics-preview {
+        .btn-text-expand {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 2px 8px;
+          border-radius: 6px;
+          border: 1px solid var(--border-color);
+          background: var(--bg-tertiary);
+          color: var(--brand-600, #4f46e5);
           font-size: 11px;
-          color: var(--text-secondary);
-          margin-top: 4px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          line-height: 1.3;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s ease;
         }
 
-        .portal-day-cell.outside .portal-topics-preview {
-          color: var(--text-tertiary);
+        .btn-text-expand:hover {
+          background: var(--brand-50, #f5f3ff);
+          border-color: var(--brand-300, #c7d2fe);
+          transform: translateY(-1px);
+        }
+
+        .portal-plan-card {
+          cursor: pointer;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          padding: 10px 12px;
+          position: relative;
+          transition: all 0.15s ease;
+        }
+
+        .portal-plan-card:hover {
+          background: var(--card-bg);
+          border-color: var(--brand-400, #818cf8);
+          box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
+        }
+
+        /* ─── Plan Text Modal (Center Popup) ─── */
+        .plan-text-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          background: rgba(15, 23, 42, 0.65);
+          backdrop-filter: blur(6px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          animation: planModalFadeIn 0.15s ease-out;
+        }
+
+        @keyframes planModalFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        @keyframes planModalScaleUp {
+          from { opacity: 0; transform: scale(0.96) translateY(8px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .plan-text-modal-content {
+          background: var(--card-bg, #ffffff);
+          width: 100%;
+          max-width: 680px;
+          max-height: 85vh;
+          border-radius: 16px;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--border-color);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          animation: planModalScaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .plan-text-modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px 22px;
+          border-bottom: 1px solid var(--border-color);
+          background: var(--bg-secondary);
+        }
+
+        .plan-text-modal-icon {
+          width: 38px;
+          height: 38px;
+          border-radius: 10px;
+          background: var(--brand-100, #e0e7ff);
+          color: var(--brand-600, #4f46e5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .modal-close-btn {
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 8px;
+          border: none;
+          background: transparent;
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .modal-close-btn:hover {
+          background: var(--bg-tertiary);
+          color: var(--text-primary);
+        }
+
+        .plan-text-modal-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 22px;
+          min-height: 240px;
+        }
+
+        .modal-reader-view {
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 20px;
+        }
+
+        .plan-text-modal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 22px;
+          border-top: 1px solid var(--border-color);
+          background: var(--bg-secondary);
         }
 
         /* ─── Side Panel ─── */
@@ -656,13 +849,50 @@ export default function StudentCalendarPage() {
             <div className="portal-calendar-card">
               {/* Header */}
               <div className="portal-calendar-header">
-                <div className="portal-month-year">
+                <div className="portal-month-year" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <h2>
                     {currentDate.toLocaleString("default", {
                       month: "long",
                       year: "numeric",
                     })}
                   </h2>
+                  {monthData?.month_fee_status === "paid" ? (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "3px 10px",
+                        borderRadius: 100,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        background: "#ecfdf5",
+                        color: "#059669",
+                        border: "1px solid #a7f3d0",
+                      }}
+                    >
+                      <CheckCircle size={13} />
+                      Fees Paid {monthData.month_paid_date ? `(${formatDisplayDate(monthData.month_paid_date)})` : ""}
+                    </span>
+                  ) : monthData?.month_fee_status === "pending" ? (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "3px 10px",
+                        borderRadius: 100,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        background: "#fff1f2",
+                        color: "#e11d48",
+                        border: "1px solid #fecdd3",
+                      }}
+                    >
+                      <Clock size={13} />
+                      Fees Due {monthData.fee_due_day ? `(Due: ${monthData.fee_due_day}th)` : ""}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="portal-calendar-actions">
                   <button className="portal-today-btn" onClick={setToday}>
@@ -707,16 +937,26 @@ export default function StudentCalendarPage() {
                     >
                       <div className="portal-day-number-wrapper">
                         <span className="portal-day-number">{dayDate.getDate()}</span>
-                        {dayData?.fee_status && (
-                          <span className={`portal-fee-badge ${dayData.fee_status}`}>
-                            Fee
+                        {dayData?.fee_status === "paid" && (
+                          <span
+                            className="portal-fee-badge paid"
+                            title={`Fee Paid on ${formatDisplayDate(isoStr)}`}
+                            style={{
+                              fontSize: 9.5,
+                              fontWeight: 700,
+                              padding: "1px 6px",
+                              borderRadius: 4,
+                              background: "#dcfce7",
+                              color: "#15803d",
+                              border: "1px solid #86efac",
+                            }}
+                          >
+                            ✓ Fee Paid
                           </span>
                         )}
                       </div>
 
-                      <div className="portal-topics-preview">
-                        {dayData?.daily_plan?.topics_to_teach}
-                      </div>
+                      {/* Daily plan text hidden from grid cells per user preference; visible in sidebar preview */}
 
                       <div className="portal-cell-indicators">
                         {/* Attendance Dot */}
@@ -809,6 +1049,34 @@ export default function StudentCalendarPage() {
             </div>
 
             <div className="portal-side-panel-content">
+              {/* Birthday banner if selected day is student's birthday */}
+              {selectedDateStr && monthData?.days?.[selectedDateStr]?.is_birthday && (
+                <div
+                  style={{
+                    background: "linear-gradient(135deg, #fdf2f8, #fbcfe8)",
+                    border: "1px solid #f472b6",
+                    borderRadius: 10,
+                    padding: "12px 14px",
+                    marginBottom: 16,
+                    color: "#831843",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    boxShadow: "0 2px 8px rgba(244, 114, 182, 0.15)",
+                  }}
+                >
+                  <span style={{ fontSize: 22 }}>🎂</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Happy Birthday! 🎉</div>
+                    <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 500 }}>
+                      Special birthday celebration day on your calendar!
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {selectedDateStr && selectedDayData ? (
                 <>
                   {/* Attendance */}
@@ -849,64 +1117,382 @@ export default function StudentCalendarPage() {
                     )}
                   </div>
 
-                  {/* Daily Plan / Topics & Notes */}
+                  {/* Daily Plan & Delivery (matches teacher calendar structure) */}
                   <div>
-                    <div className="portal-panel-section-title">Today's Topics & Notes</div>
-                    {selectedDayData.daily_plan?.topics_to_teach || selectedDayData.daily_plan?.notes ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                        {selectedDayData.daily_plan.topics_to_teach && (
-                          <div
-                            style={{
-                              fontSize: 13,
-                              color: "var(--text-primary)",
-                              background: "var(--bg-tertiary)",
-                              padding: "10px 12px",
-                              borderRadius: 8,
-                              border: "1px solid var(--border-color)",
-                              whiteSpace: "pre-wrap",
-                              lineHeight: 1.5,
-                            }}
-                          >
-                            <div style={{ fontSize: 11, fontWeight: 700, color: "#10b981", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                              Topic Covered
-                            </div>
-                            {selectedDayData.daily_plan.topics_to_teach}
-                          </div>
-                        )}
+                    <div className="portal-panel-section-title">
+                      <span>Daily Plan & Delivery</span>
+                    </div>
 
-                        {selectedDayData.daily_plan.notes && (
-                          <div
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                      {/* Preview Full Plan Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const parts = [
+                            `### Planned Topics to Teach\n${selectedDayData.daily_plan?.topics_to_teach || "*No planned topics recorded.*"}`,
+                            `### Things Actually Taught Today\n${selectedDayData.daily_plan?.actually_taught || "*Record of what was actually covered or completed in class will appear here once logged by teacher.*"}`,
+                            `### Teaching Notes / Remarks\n${selectedDayData.daily_plan?.notes || "*No remarks or notes recorded.*"}`,
+                          ];
+                          openModal(
+                            "Daily Plan & Delivery",
+                            "all",
+                            parts.join("\n\n---\n\n")
+                          );
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                          width: "100%",
+                          padding: "9px 12px",
+                          borderRadius: 8,
+                          border: "1.5px solid var(--brand-200, #c7d2fe)",
+                          background: "var(--brand-50, #f5f3ff)",
+                          color: "var(--brand-700, #4338ca)",
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                          boxShadow: "0 1px 4px rgba(99, 102, 241, 0.1)",
+                        }}
+                        title="Click to open full reading view in center popup"
+                        id="preview-full-plan-btn"
+                      >
+                        <Eye size={14} />
+                        <span>Preview Full Topic Plan & Notes</span>
+                      </button>
+
+                      {/* 1. Planned Topics to Teach */}
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                          <span
                             style={{
-                              fontSize: 13,
-                              color: "var(--text-primary)",
-                              background: "var(--bg-tertiary)",
-                              padding: "10px 12px",
-                              borderRadius: 8,
-                              border: "1px solid var(--border-color)",
-                              whiteSpace: "pre-wrap",
-                              lineHeight: 1.5,
+                              fontSize: 11,
+                              color: "var(--gray-500)",
+                              fontWeight: 600,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
                             }}
                           >
-                            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--brand-500)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                              Teacher Notes & Details
+                            <BookOpen size={12} />
+                            Planned Topics to Teach
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-text-expand"
+                            onClick={() =>
+                              openModal(
+                                "Planned Topics to Teach",
+                                "topics",
+                                selectedDayData.daily_plan?.topics_to_teach || "No planned topics logged for this date."
+                              )
+                            }
+                            title="Click to view full text in center popup"
+                            id="expand-student-topics-btn"
+                          >
+                            <Maximize2 size={11} />
+                            <span>Expand</span>
+                          </button>
+                        </div>
+                        {selectedDayData.daily_plan?.topics_to_teach ? (
+                          <div
+                            className="portal-plan-card"
+                            onClick={() =>
+                              openModal(
+                                "Planned Topics to Teach",
+                                "topics",
+                                selectedDayData.daily_plan?.topics_to_teach || ""
+                              )
+                            }
+                            title="Click to expand & view full text in center popup"
+                          >
+                            <div
+                              style={{
+                                fontSize: 13,
+                                color: "var(--text-primary)",
+                                lineHeight: 1.5,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 3,
+                                WebkitBoxOrient: "vertical",
+                                paddingRight: 20,
+                              }}
+                            >
+                              {selectedDayData.daily_plan.topics_to_teach}
                             </div>
-                            {selectedDayData.daily_plan.notes}
+                            <span
+                              style={{
+                                position: "absolute",
+                                right: 8,
+                                top: 8,
+                                color: "var(--brand-600, #4f46e5)",
+                                display: "flex",
+                                alignItems: "center",
+                              }}
+                            >
+                              <Maximize2 size={12} />
+                            </span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              background: "var(--bg-tertiary)",
+                              border: "1px dashed var(--border-color)",
+                              borderRadius: 8,
+                              padding: "9px 12px",
+                              fontSize: 12,
+                              color: "var(--text-tertiary)",
+                              fontStyle: "italic",
+                              cursor: "pointer",
+                            }}
+                            onClick={() =>
+                              openModal(
+                                "Planned Topics to Teach",
+                                "topics",
+                                "No planned topics logged for this date."
+                              )
+                            }
+                          >
+                            No planned topics logged for this date.
                           </div>
                         )}
                       </div>
-                    ) : (
-                      <p style={{ fontSize: 12, color: "var(--text-tertiary)", fontStyle: "italic" }}>
-                        No study topics or notes logged for this day
-                      </p>
-                    )}
+
+                      {/* 2. Things Actually Taught Today */}
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: "var(--brand-600, #4f46e5)",
+                              fontWeight: 600,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <CheckCircle size={12} />
+                            Things Actually Taught Today
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-text-expand"
+                            onClick={() =>
+                              openModal(
+                                "Things Actually Taught Today",
+                                "actuallyTaught",
+                                selectedDayData.daily_plan?.actually_taught || "Record of what was actually covered or completed in class will appear here once logged by teacher."
+                              )
+                            }
+                            title="Click to view full text in center popup"
+                            id="expand-student-taught-btn"
+                          >
+                            <Maximize2 size={11} />
+                            <span>Expand</span>
+                          </button>
+                        </div>
+                        {selectedDayData.daily_plan?.actually_taught ? (
+                          <div
+                            className="portal-plan-card"
+                            style={{ borderColor: "var(--brand-200, #c7d2fe)" }}
+                            onClick={() =>
+                              openModal(
+                                "Things Actually Taught Today",
+                                "actuallyTaught",
+                                selectedDayData.daily_plan?.actually_taught || ""
+                              )
+                            }
+                            title="Click to expand & view full text in center popup"
+                          >
+                            <div
+                              style={{
+                                fontSize: 13,
+                                color: "var(--text-primary)",
+                                lineHeight: 1.5,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 3,
+                                WebkitBoxOrient: "vertical",
+                                paddingRight: 20,
+                              }}
+                            >
+                              {selectedDayData.daily_plan.actually_taught}
+                            </div>
+                            <span
+                              style={{
+                                position: "absolute",
+                                right: 8,
+                                top: 8,
+                                color: "var(--brand-600, #4f46e5)",
+                                display: "flex",
+                                alignItems: "center",
+                              }}
+                            >
+                              <Maximize2 size={12} />
+                            </span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              background: "var(--bg-tertiary)",
+                              border: "1px dashed var(--brand-200, #c7d2fe)",
+                              borderRadius: 8,
+                              padding: "9px 12px",
+                              fontSize: 12,
+                              color: "var(--text-tertiary)",
+                              fontStyle: "italic",
+                              lineHeight: 1.4,
+                              cursor: "pointer",
+                            }}
+                            onClick={() =>
+                              openModal(
+                                "Things Actually Taught Today",
+                                "actuallyTaught",
+                                "Record of what was actually covered or completed in class will appear here once logged by teacher."
+                              )
+                            }
+                            title="Click to view in center popup"
+                          >
+                            Record of what was actually covered or completed in class will appear here once logged by teacher.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3. Teaching Notes / Remarks */}
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: "var(--gray-500)",
+                              fontWeight: 600,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <FileText size={12} />
+                            Teaching Notes / Remarks
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-text-expand"
+                            onClick={() =>
+                              openModal(
+                                "Teaching Notes / Remarks",
+                                "notes",
+                                selectedDayData.daily_plan?.notes || "No remarks or notes logged for this day."
+                              )
+                            }
+                            title="Click to view full text in center popup"
+                            id="expand-student-notes-btn"
+                          >
+                            <Maximize2 size={11} />
+                            <span>Expand</span>
+                          </button>
+                        </div>
+                        {selectedDayData.daily_plan?.notes ? (
+                          <div
+                            className="portal-plan-card"
+                            onClick={() =>
+                              openModal(
+                                "Teaching Notes / Remarks",
+                                "notes",
+                                selectedDayData.daily_plan?.notes || ""
+                              )
+                            }
+                            title="Click to expand & view full text in center popup"
+                          >
+                            <div
+                              style={{
+                                fontSize: 13,
+                                color: "var(--text-primary)",
+                                lineHeight: 1.5,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 4,
+                                WebkitBoxOrient: "vertical",
+                                whiteSpace: "pre-line",
+                                paddingRight: 20,
+                              }}
+                            >
+                              {selectedDayData.daily_plan.notes}
+                            </div>
+                            <span
+                              style={{
+                                position: "absolute",
+                                right: 8,
+                                top: 8,
+                                color: "var(--brand-600, #4f46e5)",
+                                display: "flex",
+                                alignItems: "center",
+                              }}
+                            >
+                              <Maximize2 size={12} />
+                            </span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              background: "var(--bg-tertiary)",
+                              border: "1px dashed var(--border-color)",
+                              borderRadius: 8,
+                              padding: "9px 12px",
+                              fontSize: 12,
+                              color: "var(--text-tertiary)",
+                              fontStyle: "italic",
+                              cursor: "pointer",
+                            }}
+                            onClick={() =>
+                              openModal(
+                                "Teaching Notes / Remarks",
+                                "notes",
+                                "No remarks or notes logged for this day."
+                              )
+                            }
+                          >
+                            No remarks or notes logged for this day.
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Events */}
                   <div>
-                    <div className="portal-panel-section-title">Calendar Events & Exams</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div className="portal-panel-section-title" style={{ margin: 0 }}>Calendar Events & Exams</div>
+                      {canEditCalendar && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAddEventModal(true)}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "3px 8px",
+                            borderRadius: 6,
+                            border: "1px solid var(--border-color)",
+                            background: "var(--bg-tertiary)",
+                            color: "var(--brand-600)",
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Plus size={12} /> Add Event
+                        </button>
+                      )}
+                    </div>
+
                     {selectedDayData.events && selectedDayData.events.length > 0 ? (
                       selectedDayData.events.map((event) => (
-                        <div key={event.id} className={`portal-event-item ${event.event_type}`}>
+                        <div key={event.id} className={`portal-event-item ${event.event_type}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <div className="portal-event-info">
                             <h4>{event.title}</h4>
                             <p style={{ textTransform: "capitalize" }}>
@@ -914,6 +1500,27 @@ export default function StudentCalendarPage() {
                               {event.description ? ` • ${event.description}` : ""}
                             </p>
                           </div>
+                          {canEditCalendar && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`Delete event "${event.title}"?`)) {
+                                  deleteEventMutation.mutate(event.id);
+                                }
+                              }}
+                              title="Delete event"
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "#ef4444",
+                                cursor: "pointer",
+                                padding: "4px 6px",
+                                borderRadius: 4,
+                              }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       ))
                     ) : (
@@ -973,6 +1580,28 @@ export default function StudentCalendarPage() {
                   <p style={{ fontSize: 13 }}>
                     No data available for this date.
                   </p>
+                  {canEditCalendar && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddEventModal(true)}
+                      style={{
+                        marginTop: 12,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        border: "none",
+                        background: "var(--brand-500)",
+                        color: "#fff",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Plus size={13} /> Add Event on this Date
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--gray-400)" }}>
@@ -983,6 +1612,177 @@ export default function StudentCalendarPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Plan Text Modal (Center Popup - Read-Only Preview for Students) */}
+      <PlanTextModal
+        isOpen={modalState.isOpen}
+        onClose={() => setModalState((prev) => ({ ...prev, isOpen: false }))}
+        title={modalState.title}
+        field={modalState.field}
+        dateStr={selectedDateStr || ""}
+        initialValue={modalState.value}
+        readOnly={true}
+      />
+
+      {/* Add Calendar Event Modal */}
+      {showAddEventModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16,
+          }}
+          onClick={() => setShowAddEventModal(false)}
+        >
+          <div
+            style={{
+              background: "var(--card-bg, #fff)",
+              borderRadius: "var(--radius, 12px)",
+              border: "1px solid var(--border-color, #e2e8f0)",
+              width: "100%",
+              maxWidth: 420,
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+              padding: 24,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
+                Add Event for {selectedDateStr || formatLocalDateToISO(currentDate)}
+              </h3>
+              <button
+                onClick={() => setShowAddEventModal(false)}
+                style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newEventTitle.trim()) return;
+                createEventMutation.mutate({
+                  event_date: selectedDateStr || formatLocalDateToISO(currentDate),
+                  title: newEventTitle.trim(),
+                  description: newEventDesc.trim() || undefined,
+                  event_type: newEventType,
+                });
+              }}
+              style={{ display: "flex", flexDirection: "column", gap: 14 }}
+            >
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Event Title *
+                </label>
+                <input
+                  required
+                  placeholder="e.g. Science Project Submission, Math Quiz"
+                  value={newEventTitle}
+                  onChange={(e) => setNewEventTitle(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Type
+                </label>
+                <select
+                  value={newEventType}
+                  onChange={(e) => setNewEventType(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 10px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <option value="reminder">Reminder</option>
+                  <option value="exam">Exam / Test</option>
+                  <option value="class">Study Session</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Description (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Additional details..."
+                  value={newEventDesc}
+                  onChange={(e) => setNewEventDesc(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddEventModal(false)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "transparent",
+                    color: "var(--text-secondary)",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createEventMutation.isPending}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: "var(--brand-500, #4f46e5)",
+                    color: "#fff",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {createEventMutation.isPending ? "Adding..." : "Add Event"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

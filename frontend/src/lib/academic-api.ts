@@ -16,6 +16,7 @@ export interface DailyPlan {
   date: string;
   topics_to_teach: string | null;
   notes: string | null;
+  actually_taught?: string | null;
 }
 
 export interface CalendarEvent {
@@ -174,6 +175,30 @@ export interface AIPlan {
   edited_plan: string | null;
   prompt_used: string | null;
   created_at: string;
+  quota_exceeded?: boolean;
+  quota_notice?: string | null;
+}
+
+export interface AIChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  attachment_name?: string;
+  attachment_type?: string;
+  attachment_data?: string;
+}
+
+export interface AIChatResponse {
+  response: string;
+  quota_exceeded?: boolean;
+  quota_notice?: string | null;
+}
+
+export interface AIQuotaStatus {
+  is_configured: boolean;
+  is_active: boolean;
+  model_name?: string | null;
+  message: string;
+  quota_exceeded?: boolean;
 }
 
 export interface Announcement {
@@ -202,8 +227,19 @@ export const academicApi = {
     api.delete(`/students/${studentId}/attendance`, { params: { attendance_date: date } }),
 
   // Daily Plans
-  saveDailyPlan: (studentId: string, date: string, topics_to_teach?: string, notes?: string) =>
-    api.post<DailyPlan>(`/students/${studentId}/daily-plans`, { date, topics_to_teach, notes }),
+  saveDailyPlan: (
+    studentId: string,
+    date: string,
+    topics_to_teach?: string,
+    notes?: string,
+    actually_taught?: string
+  ) =>
+    api.post<DailyPlan>(`/students/${studentId}/daily-plans`, {
+      date,
+      topics_to_teach,
+      notes,
+      actually_taught,
+    }),
 
   // Calendar Events
   addEvent: (studentId: string, data: { event_date: string; title: string; description?: string; event_type: string }) =>
@@ -362,6 +398,12 @@ export const academicApi = {
   saveAIPlan: (studentId: string, planId: string, editedPlan: string) =>
     api.put<AIPlan>(`/students/${studentId}/ai/plans/${planId}`, { edited_plan: editedPlan }),
 
+  deleteAIPlan: (studentId: string, planId: string) =>
+    api.delete<{ message: string }>(`/students/${studentId}/ai/plans/${planId}`),
+
+  clearAIPlans: (studentId: string) =>
+    api.delete<{ message: string }>(`/students/${studentId}/ai/plans`),
+
   // Announcements (Phase 8)
   createAnnouncement: (data: { title: string; message?: string }) =>
     api.post<Announcement>("/announcements", data),
@@ -371,5 +413,21 @@ export const academicApi = {
 
   deleteAnnouncement: (announcementId: string) =>
     api.delete(`/announcements/${announcementId}`),
+
+  // AI Chat & Quota Monitoring
+  sendAIChat: (
+    studentId: string,
+    message: string,
+    history: AIChatMessage[] = [],
+    attachment?: { file_data?: string; file_name?: string; mime_type?: string }
+  ) =>
+    api.post<AIChatResponse>(`/students/${studentId}/ai/chat`, {
+      message,
+      history,
+      ...attachment,
+    }),
+
+  getAIQuotaStatus: (studentId: string) =>
+    api.get<AIQuotaStatus>(`/students/${studentId}/ai/quota`),
 };
 

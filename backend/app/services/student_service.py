@@ -119,6 +119,11 @@ async def create_student(
     db.add(student)
     await db.flush()
     await db.refresh(student)
+
+    # Automatically create student_teacher association with default permissions
+    from app.services.permission_service import get_or_create_student_teacher
+    await get_or_create_student_teacher(db, student.id, teacher.id)
+
     return _student_to_response(student)
 
 

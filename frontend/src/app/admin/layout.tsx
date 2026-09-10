@@ -85,7 +85,13 @@ export default function AdminLayout({
         @media (max-width: 1023px) {
           .admin-main-content {
             margin-left: 0 !important;
-            padding: 76px 16px 32px 16px !important;
+            padding: 72px 16px 28px 16px !important;
+          }
+        }
+
+        @media (min-width: 640px) and (max-width: 1023px) {
+          .admin-main-content {
+            padding: 80px 24px 36px 24px !important;
           }
         }
       `}</style>

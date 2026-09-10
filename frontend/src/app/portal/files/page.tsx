@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Folder,
   FolderOpen,
@@ -11,11 +11,15 @@ import {
   Eye,
   X,
   Image as ImageIcon,
+  Upload,
+  Plus,
 } from "lucide-react";
 import { portalApi, PortalFile } from "@/lib/portal-api";
 import { formatDisplayDate } from "@/lib/date-utils";
 
 export default function StudentFilesPage() {
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeFolderCategory, setActiveFolderCategory] = useState<string | null>(null);
   const [previewModalFile, setPreviewModalFile] = useState<{
     url: string;
@@ -63,6 +67,25 @@ export default function StudentFilesPage() {
       setPdfBlobUrl(rawUrl);
     }
   }, [previewModalFile]);
+
+  const { data: permData } = useQuery({
+    queryKey: ["portal-permissions"],
+    queryFn: () => portalApi.getPermissions(),
+    select: (res) => res.data,
+  });
+
+  const canImport = !!permData?.effective_permissions?.files?.can_import;
+
+  const uploadFileMutation = useMutation({
+    mutationFn: (file: File) => portalApi.uploadFile(file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-files"] });
+    },
+    onError: (err) => {
+      console.error("Failed to upload file", err);
+      alert("Failed to upload file. Please try again.");
+    },
+  });
 
   const { data: files = [], isLoading } = useQuery({
     queryKey: ["portal-files"],
@@ -244,13 +267,59 @@ export default function StudentFilesPage() {
       `}</style>
 
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>
-          Resource & Files Hub
-        </h1>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-          Access all question papers, homework sheets, syllabus resources, and shared documents
-        </p>
+      <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>
+            Resource & Files Hub
+          </h1>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+            Access all question papers, homework sheets, syllabus resources, and shared documents
+          </p>
+        </div>
+
+        {canImport && (
+          <div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  uploadFileMutation.mutate(f);
+                  e.target.value = "";
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadFileMutation.isPending}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 16px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: "var(--radius-sm, 8px)",
+                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)",
+              }}
+            >
+              {uploadFileMutation.isPending ? (
+                <>Uploading...</>
+              ) : (
+                <>
+                  <Upload size={15} /> Upload Resource
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Folder Categories Grid */}

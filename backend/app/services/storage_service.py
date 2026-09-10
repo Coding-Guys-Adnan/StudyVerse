@@ -95,12 +95,15 @@ async def upload_file_bytes(
             )
 
     # 2. Local Fallback: Save to uploads directory on disk
-    upload_dir = os.path.join("uploads", folder)
-    os.makedirs(upload_dir, exist_ok=True)
+    from pathlib import Path
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    uploads_base = backend_dir / "uploads"
+    upload_dir = uploads_base / folder
+    upload_dir.mkdir(parents=True, exist_ok=True)
 
     file_id = str(uuid.uuid4())
     safe_filename = f"{file_id}_{filename}"
-    file_path = os.path.join(upload_dir, safe_filename)
+    file_path = upload_dir / safe_filename
 
     with open(file_path, "wb") as f:
         f.write(contents)
@@ -141,9 +144,13 @@ async def delete_file_by_path(stored_path: str) -> None:
 
     # Local file path
     if stored_path.startswith("/uploads/"):
-        relative_file_path = stored_path.lstrip("/")
-        if os.path.exists(relative_file_path):
+        from pathlib import Path
+        backend_dir = Path(__file__).resolve().parent.parent.parent
+        uploads_base = backend_dir / "uploads"
+        rel_path = stored_path.replace("/uploads/", "", 1).lstrip("/")
+        local_file_path = uploads_base / rel_path
+        if local_file_path.exists():
             try:
-                os.remove(relative_file_path)
+                local_file_path.unlink()
             except Exception as e:
-                logger.warning(f"Failed to delete local file {relative_file_path}: {e}")
+                logger.warning(f"Failed to delete local file {local_file_path}: {e}")

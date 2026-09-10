@@ -54,8 +54,42 @@ class AIPlanResponse(BaseModel):
     edited_plan: Optional[str] = None
     prompt_used: Optional[str] = None
     created_at: str
+    quota_exceeded: bool = False
+    quota_notice: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+# ─── AI Chat & Quota Status ─────────────────────────────
+
+class AIChatMessage(BaseModel):
+    role: str  # "user" | "assistant" | "system"
+    content: str
+    attachment_name: Optional[str] = None
+    attachment_type: Optional[str] = None
+    attachment_data: Optional[str] = None
+
+
+class AIChatRequest(BaseModel):
+    message: str
+    history: list[AIChatMessage] = []
+    file_data: Optional[str] = None  # Base64 encoded file or image
+    file_name: Optional[str] = None
+    mime_type: Optional[str] = None
+
+
+class AIChatResponse(BaseModel):
+    response: str
+    quota_exceeded: bool = False
+    quota_notice: Optional[str] = None
+
+
+class AIQuotaStatusResponse(BaseModel):
+    is_configured: bool
+    is_active: bool
+    model_name: Optional[str] = None
+    message: str
+    quota_exceeded: bool = False
 
 
 # ─── Announcements ─────────────────────────────────────

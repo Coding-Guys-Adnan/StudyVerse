@@ -8,6 +8,9 @@ from app.schemas.extended import (
     AIPlanSaveRequest,
     AIPlanResponse,
     RecommendationResponse,
+    AIChatRequest,
+    AIChatResponse,
+    AIQuotaStatusResponse,
 )
 from app.services import ai_service
 
@@ -73,3 +76,55 @@ async def save_edited_ai_plan(
     return await ai_service.update_ai_lesson_plan(
         db, teacher.id, student_id, plan_id, data.edited_plan
     )
+
+
+@router.delete("/ai/plans/{plan_id}")
+async def delete_ai_plan(
+    student_id: str,
+    plan_id: str,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a specific AI generated plan. Only accessible by the assigned teacher."""
+    return await ai_service.delete_ai_lesson_plan(
+        db, teacher.id, student_id, plan_id
+    )
+
+
+@router.delete("/ai/plans")
+async def clear_all_ai_plans(
+    student_id: str,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete all AI generated plans for a student. Only accessible by the assigned teacher."""
+    return await ai_service.clear_all_ai_plans(
+        db, teacher.id, student_id
+    )
+
+
+
+# ─── AI Chat & Quota Monitoring ────────────────────────
+
+@router.post("/ai/chat", response_model=AIChatResponse)
+async def teacher_chat_with_ai(
+    student_id: str,
+    data: AIChatRequest,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Chat with AI Teaching Consultant about teaching strategies, doubts, and student progress."""
+    return await ai_service.teacher_ai_chat(
+        db, teacher.id, student_id, data.message, data.history,
+        file_data=data.file_data, mime_type=data.mime_type, file_name=data.file_name
+    )
+
+
+@router.get("/ai/quota", response_model=AIQuotaStatusResponse)
+async def get_quota_status(
+    student_id: str,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Check live status of Gemini API connectivity and quota."""
+    return await ai_service.check_gemini_quota_status()

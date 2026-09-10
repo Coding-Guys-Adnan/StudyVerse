@@ -21,6 +21,7 @@ import {
   X,
   CreditCard,
   Cake,
+  ShieldCheck,
 } from "lucide-react";
 import { studentsApi, type StudentUpdate } from "@/lib/students-api";
 import { StudentCalendar } from "@/components/calendar/student-calendar";
@@ -28,8 +29,9 @@ import { HomeworkTab } from "@/components/student/homework-tab";
 import { SyllabusTab } from "@/components/student/syllabus-tab";
 import { AIAssistantTab } from "@/components/student/ai-assistant-tab";
 import { TestsTab } from "@/components/student/tests-tab";
+import { StudentPermissionsTab } from "@/components/student/student-permissions-tab";
 
-type TabType = "calendar" | "homework" | "syllabus" | "ai" | "tests";
+type TabType = "calendar" | "homework" | "syllabus" | "ai" | "tests" | "permissions";
 
 export default function StudentProfilePage() {
   const params = useParams();
@@ -88,6 +90,7 @@ export default function StudentProfilePage() {
     { id: "syllabus", label: "Syllabus Tracker", icon: FileText },
     { id: "ai", label: "AI assistant", icon: Sparkles },
     { id: "tests", label: "Exams & Marks", icon: Award },
+    { id: "permissions", label: "Access & Permissions", icon: ShieldCheck },
   ] as const;
 
   if (isLoading) {
@@ -534,10 +537,13 @@ export default function StudentProfilePage() {
               <SyllabusTab studentId={studentId} studentName={student?.name} />
             )}
             {activeTab === "ai" && (
-              <AIAssistantTab studentId={studentId} />
+              <AIAssistantTab studentId={studentId} studentName={student?.name} />
             )}
             {activeTab === "tests" && (
               <TestsTab studentId={studentId} />
+            )}
+            {activeTab === "permissions" && (
+              <StudentPermissionsTab studentId={studentId} />
             )}
           </motion.div>
         </AnimatePresence>

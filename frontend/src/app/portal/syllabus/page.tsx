@@ -1,8 +1,20 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { FileText, BookOpen, Paperclip, MessageSquare, ChevronRight, ChevronDown, Download } from "lucide-react";
+import {
+  FileText,
+  BookOpen,
+  Paperclip,
+  MessageSquare,
+  ChevronRight,
+  ChevronDown,
+  Download,
+  Plus,
+  Trash2,
+  X,
+  Upload,
+} from "lucide-react";
 import { portalApi, type Syllabus } from "@/lib/portal-api";
 import { getFileUrl } from "@/lib/api";
 import { SyllabusExportModal } from "@/components/student/syllabus-export-modal";
@@ -28,6 +40,26 @@ export default function StudentSyllabusPage() {
   const queryClient = useQueryClient();
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  // Form state
+  const [newSubject, setNewSubject] = useState("");
+  const [newChapter, setNewChapter] = useState("");
+  const [newChapterType, setNewChapterType] = useState("chapter");
+  const [newTerm, setNewTerm] = useState("SEM1");
+
+  // Inline items state
+  const [addingItemChapterId, setAddingItemChapterId] = useState<string | null>(null);
+  const [newItemText, setNewItemText] = useState("");
+
+  const { data: permData } = useQuery({
+    queryKey: ["portal-permissions"],
+    queryFn: () => portalApi.getPermissions(),
+    select: (res) => res.data,
+  });
+
+  const canEdit = !!permData?.effective_permissions?.syllabus?.can_edit;
+  const canImport = !!permData?.effective_permissions?.syllabus?.can_import;
 
   const { data: profile } = useQuery({
     queryKey: ["portal-profile"],
@@ -39,6 +71,48 @@ export default function StudentSyllabusPage() {
     queryKey: ["portal-syllabus"],
     queryFn: () => portalApi.getSyllabusList(),
     select: (res) => res.data,
+  });
+
+  const addSyllabusMutation = useMutation({
+    mutationFn: (data: { subject: string; chapter: string; chapter_type: string; term: string }) =>
+      portalApi.createSyllabus({
+        subject: data.subject,
+        chapter: data.chapter,
+        chapter_type: data.chapter_type,
+        term: data.term,
+        status: "pending",
+        progress: 0,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-syllabus"] });
+      setShowAddModal(false);
+      setNewSubject("");
+      setNewChapter("");
+    },
+  });
+
+  const addItemMutation = useMutation({
+    mutationFn: ({ chapterId, text }: { chapterId: string; text: string }) =>
+      portalApi.createChecklistItem(chapterId, { text, completed: false }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-syllabus"] });
+      setAddingItemChapterId(null);
+      setNewItemText("");
+    },
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: (itemId: string) => portalApi.deleteChecklistItem(itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-syllabus"] });
+    },
+  });
+
+  const deleteSyllabusMutation = useMutation({
+    mutationFn: (syllabusId: string) => portalApi.deleteSyllabus(syllabusId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-syllabus"] });
+    },
   });
 
   const toggleExpand = (syllabusId: string) => {
@@ -83,29 +157,53 @@ export default function StudentSyllabusPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>Syllabus Tracker</h1>
           <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>Track study checklist, completion progress, teacher notes, and file attachments</p>
         </div>
-        {syllabusList.length > 0 && (
-          <button
-            onClick={() => setShowExportModal(true)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 14px",
-              fontSize: 13,
-              fontWeight: 600,
-              borderRadius: "var(--radius-sm, 8px)",
-              background: "var(--bg-tertiary)",
-              color: "var(--text-primary)",
-              border: "1px solid var(--border-color)",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}
-            id="student-export-syllabus-btn"
-          >
-            <Download size={15} style={{ color: "var(--brand-600)" }} />
-            Export Syllabus
-          </button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {canEdit && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: "var(--radius-sm, 8px)",
+                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)",
+              }}
+            >
+              <Plus size={15} /> Add Topic
+            </button>
+          )}
+
+          {syllabusList.length > 0 && (
+            <button
+              onClick={() => setShowExportModal(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: "var(--radius-sm, 8px)",
+                background: "var(--bg-tertiary)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border-color)",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              id="student-export-syllabus-btn"
+            >
+              <Download size={15} style={{ color: "var(--brand-600)" }} />
+              Export Syllabus
+            </button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -353,8 +451,119 @@ export default function StudentSyllabusPage() {
                                     <Paperclip size={11} /> {att.filename}
                                   </a>
                                 ))}
+
+                                {canEdit && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm("Delete this checklist item?")) {
+                                        deleteItemMutation.mutate(cItem.id);
+                                      }
+                                    }}
+                                    title="Delete checklist item"
+                                    style={{
+                                      background: "none",
+                                      border: "none",
+                                      color: "#ef4444",
+                                      cursor: "pointer",
+                                      padding: "4px 6px",
+                                      borderRadius: 4,
+                                    }}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
                               </div>
                             ))}
+
+                            {canEdit && chapterObj && (
+                              <div style={{ marginTop: 12, paddingTop: 8, borderTop: "1px dashed var(--border-color)" }}>
+                                {addingItemChapterId === chapterObj.id ? (
+                                  <form
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      if (newItemText.trim()) {
+                                        addItemMutation.mutate({ chapterId: chapterObj.id, text: newItemText.trim() });
+                                      }
+                                    }}
+                                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                                  >
+                                    <input
+                                      autoFocus
+                                      placeholder="New checklist item..."
+                                      value={newItemText}
+                                      onChange={(e) => setNewItemText(e.target.value)}
+                                      style={{
+                                        flex: 1,
+                                        padding: "6px 10px",
+                                        borderRadius: 6,
+                                        border: "1px solid var(--border-color)",
+                                        background: "var(--bg-tertiary)",
+                                        fontSize: 12.5,
+                                        color: "var(--text-primary)",
+                                      }}
+                                    />
+                                    <button
+                                      type="submit"
+                                      disabled={addItemMutation.isPending}
+                                      style={{
+                                        padding: "6px 12px",
+                                        borderRadius: 6,
+                                        border: "none",
+                                        background: "var(--brand-500)",
+                                        color: "#fff",
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Add
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setAddingItemChapterId(null);
+                                        setNewItemText("");
+                                      }}
+                                      style={{
+                                        padding: "6px 10px",
+                                        borderRadius: 6,
+                                        border: "1px solid var(--border-color)",
+                                        background: "transparent",
+                                        color: "var(--text-secondary)",
+                                        fontSize: 12,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </form>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setAddingItemChapterId(chapterObj.id);
+                                      setNewItemText("");
+                                    }}
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 6,
+                                      padding: "5px 10px",
+                                      borderRadius: 6,
+                                      border: "1px dashed var(--border-color)",
+                                      background: "transparent",
+                                      color: "var(--brand-600)",
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    <Plus size={13} /> Add Checklist Item
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -459,6 +668,194 @@ export default function StudentSyllabusPage() {
         syllabusList={syllabusList}
         studentName={profile?.name || "Student"}
       />
+
+      {/* Add Topic Modal */}
+      {showAddModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16,
+          }}
+          onClick={() => setShowAddModal(false)}
+        >
+          <div
+            style={{
+              background: "var(--card-bg, #fff)",
+              borderRadius: "var(--radius, 12px)",
+              border: "1px solid var(--border-color, #e2e8f0)",
+              width: "100%",
+              maxWidth: 440,
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+              padding: 24,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Add Syllabus Topic</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newSubject.trim() || !newChapter.trim()) return;
+                addSyllabusMutation.mutate({
+                  subject: newSubject.trim(),
+                  chapter: newChapter.trim(),
+                  chapter_type: newChapterType,
+                  term: newTerm,
+                });
+              }}
+              style={{ display: "flex", flexDirection: "column", gap: 14 }}
+            >
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Subject *
+                </label>
+                <input
+                  required
+                  placeholder="e.g. Mathematics, Science"
+                  value={newSubject}
+                  onChange={(e) => setNewSubject(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Chapter / Topic Title *
+                </label>
+                <input
+                  required
+                  placeholder="e.g. Quadratic Equations"
+                  value={newChapter}
+                  onChange={(e) => setNewChapter(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                    Category
+                  </label>
+                  <select
+                    value={newChapterType}
+                    onChange={(e) => setNewChapterType(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      fontSize: 13,
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <option value="chapter">Chapter</option>
+                    <option value="story">Story</option>
+                    <option value="poem">Poem</option>
+                    <option value="grammar">Grammar</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                    Term / Exam
+                  </label>
+                  <select
+                    value={newTerm}
+                    onChange={(e) => setNewTerm(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      fontSize: 13,
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <option value="SEM1">SEM1</option>
+                    <option value="SEM2">SEM2</option>
+                    <option value="UNIT TEST I">UT I</option>
+                    <option value="UNIT TEST II">UT II</option>
+                    <option value="UNIT TEST III">UT III</option>
+                    <option value="CLASS TEST">Class Test</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "transparent",
+                    color: "var(--text-secondary)",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addSyllabusMutation.isPending}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: "var(--brand-500, #4f46e5)",
+                    color: "#fff",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {addSyllabusMutation.isPending ? "Adding..." : "Add Topic"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

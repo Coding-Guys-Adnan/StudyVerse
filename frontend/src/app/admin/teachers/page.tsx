@@ -176,6 +176,7 @@ export default function AdminTeachersPage() {
           max-width: 1050px;
           margin: 0 auto;
           padding-bottom: 40px;
+          width: 100%;
         }
 
         .header-row {
@@ -188,7 +189,7 @@ export default function AdminTeachersPage() {
         }
 
         .header-row h1 {
-          font-size: 24px;
+          font-size: clamp(20px, 4vw, 24px);
           font-weight: 700;
           color: var(--text-primary);
           letter-spacing: -0.5px;
@@ -226,12 +227,14 @@ export default function AdminTeachersPage() {
           align-items: center;
           gap: 16px;
           margin-bottom: 20px;
+          flex-wrap: wrap;
         }
 
         .search-wrapper {
           position: relative;
           flex: 1;
-          max-width: 360px;
+          max-width: 380px;
+          min-width: 240px;
           display: flex;
           align-items: center;
         }
@@ -268,13 +271,15 @@ export default function AdminTeachersPage() {
           background: var(--card-bg);
           border-radius: var(--radius, 12px);
           border: 1px solid var(--border-color);
-          overflow: hidden;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
           box-shadow: var(--shadow-sm);
+          width: 100%;
         }
 
         .teachers-table {
           width: 100%;
-          min-width: 800px;
+          min-width: 780px;
           border-collapse: collapse;
           text-align: left;
         }
@@ -405,24 +410,30 @@ export default function AdminTeachersPage() {
           background: var(--card-bg);
           border-radius: 16px;
           width: 100%;
-          max-width: 440px;
+          max-width: 460px;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
           box-shadow: var(--shadow-xl);
           border: 1px solid var(--border-color);
           overflow: hidden;
         }
 
         .modal-header {
-          padding: 18px 24px;
+          padding: 16px 20px;
           border-bottom: 1px solid var(--border-color);
           display: flex;
           align-items: center;
           justify-content: space-between;
           background: var(--bg-tertiary);
           color: var(--text-primary);
+          flex-shrink: 0;
         }
 
         .modal-body {
-          padding: 24px;
+          padding: 22px;
+          overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
         }
 
         .form-group {
@@ -505,6 +516,47 @@ export default function AdminTeachersPage() {
           background: var(--bg-tertiary);
           border-radius: 8px;
           border: 1px solid var(--border-color);
+          gap: 12px;
+        }
+
+        @media (max-width: 640px) {
+          .header-row {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+          }
+
+          .add-teacher-btn {
+            width: 100%;
+            justify-content: center;
+          }
+
+          .toolbar {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .search-wrapper {
+            max-width: 100%;
+            width: 100%;
+          }
+
+          .modal-overlay {
+            padding: 12px;
+          }
+
+          .modal-content {
+            max-height: 92vh;
+            border-radius: 12px;
+          }
+
+          .modal-header {
+            padding: 14px 16px;
+          }
+
+          .modal-body {
+            padding: 16px;
+          }
         }
       `}</style>
 

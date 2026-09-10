@@ -21,6 +21,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { academicApi, Test } from "@/lib/academic-api";
+import { getFileUrl } from "@/lib/api";
 import { formatDisplayDate } from "@/lib/date-utils";
 import {
   ResponsiveContainer,
@@ -86,7 +87,9 @@ export function TestsTab({ studentId }: TestsTabProps) {
     let rawUrl = previewModalFile.url?.trim() || "";
     if (!rawUrl) return;
 
-    if (rawUrl.startsWith("JVBERi")) {
+    if (rawUrl.includes("data:")) {
+      rawUrl = rawUrl.substring(rawUrl.indexOf("data:"));
+    } else if (rawUrl.startsWith("JVBERi")) {
       rawUrl = `data:application/pdf;base64,${rawUrl}`;
     }
 
@@ -112,9 +115,43 @@ export function TestsTab({ studentId }: TestsTabProps) {
         setPdfBlobUrl(rawUrl);
       }
     } else {
-      setPdfBlobUrl(rawUrl);
+      setPdfBlobUrl(getFileUrl(rawUrl));
     }
   }, [previewModalFile]);
+
+  const handleDownloadFile = () => {
+    if (!previewModalFile) return;
+    let downloadUrl = pdfBlobUrl;
+    if (!downloadUrl) {
+      let rawUrl = previewModalFile.url?.trim() || "";
+      if (rawUrl.includes("data:")) {
+        rawUrl = rawUrl.substring(rawUrl.indexOf("data:"));
+        try {
+          const parts = rawUrl.split(",");
+          const mimeMatch = parts[0].match(/:(.*?);/);
+          const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+          const b64Data = (parts[1] || parts[0]).replace(/[\r\n\s]/g, "");
+          const binaryStr = atob(b64Data);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: mimeType });
+          downloadUrl = URL.createObjectURL(blob);
+        } catch {
+          downloadUrl = rawUrl;
+        }
+      } else {
+        downloadUrl = getFileUrl(rawUrl);
+      }
+    }
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = previewModalFile.name || "document.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   // ─── Query ──────────────────────────────────────────────
   const { data: tests = [], isLoading } = useQuery({
@@ -265,10 +302,14 @@ export function TestsTab({ studentId }: TestsTabProps) {
   const getSanitizedPdfUrl = (url?: string | null) => {
     if (!url) return "";
     let clean = url.trim();
-    if (clean.startsWith("JVBERi")) {
+    if (clean.includes("data:")) {
+      clean = clean.substring(clean.indexOf("data:"));
+    } else if (clean.startsWith("JVBERi")) {
       clean = `data:application/pdf;base64,${clean}`;
     } else if (clean.startsWith("data:")) {
       clean = clean.replace(/^data:[^;]+;base64,/, "data:application/pdf;base64,");
+    } else {
+      clean = getFileUrl(clean);
     }
     return clean;
   };
@@ -1249,9 +1290,9 @@ export function TestsTab({ studentId }: TestsTabProps) {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <a
-                  href={previewModalFile.url}
-                  download={previewModalFile.name}
+                <button
+                  type="button"
+                  onClick={handleDownloadFile}
                   className="paper-link-btn"
                   style={{
                     display: "inline-flex",
@@ -1261,6 +1302,8 @@ export function TestsTab({ studentId }: TestsTabProps) {
                     fontSize: 12.5,
                     fontWeight: 600,
                     borderRadius: 6,
+                    border: "none",
+                    cursor: "pointer",
                     textDecoration: "none",
                     background: "var(--brand-500)",
                     color: "#ffffff",
@@ -1268,7 +1311,7 @@ export function TestsTab({ studentId }: TestsTabProps) {
                 >
                   <Download size={14} />
                   Download
-                </a>
+                </button>
                 <button
                   style={{
                     background: "none",
@@ -1311,7 +1354,7 @@ export function TestsTab({ studentId }: TestsTabProps) {
                 />
               ) : (
                 <img
-                  src={previewModalFile.url}
+                  src={getFileUrl(previewModalFile.url)}
                   alt={previewModalFile.name}
                   style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 6 }}
                 />

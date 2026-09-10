@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Award,
   Calendar,
@@ -15,6 +15,9 @@ import {
   ChevronDown,
   FileText,
   Image as ImageIcon,
+  Plus,
+  Trash2,
+  Upload,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -28,6 +31,7 @@ import {
   Bar,
 } from "recharts";
 import { portalApi } from "@/lib/portal-api";
+import { getFileUrl } from "@/lib/api";
 import { formatDisplayDate } from "@/lib/date-utils";
 
 const PREDEFINED_TERMS = [
@@ -57,7 +61,9 @@ export default function StudentTestsPage() {
     let rawUrl = previewModalFile.url?.trim() || "";
     if (!rawUrl) return;
 
-    if (rawUrl.startsWith("JVBERi")) {
+    if (rawUrl.includes("data:")) {
+      rawUrl = rawUrl.substring(rawUrl.indexOf("data:"));
+    } else if (rawUrl.startsWith("JVBERi")) {
       rawUrl = `data:application/pdf;base64,${rawUrl}`;
     }
 
@@ -83,19 +89,127 @@ export default function StudentTestsPage() {
         setPdfBlobUrl(rawUrl);
       }
     } else {
-      setPdfBlobUrl(rawUrl);
+      setPdfBlobUrl(getFileUrl(rawUrl));
     }
   }, [previewModalFile]);
+
+  const handleDownloadFile = () => {
+    if (!previewModalFile) return;
+    let downloadUrl = pdfBlobUrl;
+    if (!downloadUrl) {
+      let rawUrl = previewModalFile.url?.trim() || "";
+      if (rawUrl.includes("data:")) {
+        rawUrl = rawUrl.substring(rawUrl.indexOf("data:"));
+        try {
+          const parts = rawUrl.split(",");
+          const mimeMatch = parts[0].match(/:(.*?);/);
+          const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+          const b64Data = (parts[1] || parts[0]).replace(/[\r\n\s]/g, "");
+          const binaryStr = atob(b64Data);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: mimeType });
+          downloadUrl = URL.createObjectURL(blob);
+        } catch {
+          downloadUrl = rawUrl;
+        }
+      } else {
+        downloadUrl = getFileUrl(rawUrl);
+      }
+    }
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = previewModalFile.name || "document.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const queryClient = useQueryClient();
 
   // Filter State
   const [selectedExamFilters, setSelectedExamFilters] = useState<string[]>([]);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  // Form State
+  const [formSubject, setFormSubject] = useState("");
+  const [formExamName, setFormExamName] = useState("");
+  const [formExamType, setFormExamType] = useState<"school" | "tuition">("tuition");
+  const [formMaxMarks, setFormMaxMarks] = useState<number>(100);
+  const [formObtainedMarks, setFormObtainedMarks] = useState<number>(85);
+  const [formExamDate, setFormExamDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [formRemarks, setFormRemarks] = useState("");
+  const [formQuestionPaper, setFormQuestionPaper] = useState<{ filename: string; url: string } | null>(null);
+  const [formAnswerPaper, setFormAnswerPaper] = useState<{ filename: string; url: string } | null>(null);
+  const [isUploadingPaper, setIsUploadingPaper] = useState(false);
+
+  // Permissions
+  const { data: permData } = useQuery({
+    queryKey: ["portal-permissions"],
+    queryFn: () => portalApi.getPermissions(),
+    select: (res) => res.data,
+  });
+
+  const canEdit = !!permData?.effective_permissions?.tests?.can_edit;
+  const canImport = !!permData?.effective_permissions?.tests?.can_import;
 
   const { data: tests = [], isLoading } = useQuery({
     queryKey: ["portal-tests"],
     queryFn: () => portalApi.getTests(),
     select: (res) => res.data,
   });
+
+  const createTestMutation = useMutation({
+    mutationFn: (data: {
+      subject: string;
+      exam_name: string;
+      exam_type: "school" | "tuition";
+      max_marks: number;
+      obtained_marks: number;
+      remarks?: string;
+      exam_date?: string;
+      question_paper_name?: string;
+      question_paper_url?: string;
+      answer_paper_name?: string;
+      answer_paper_url?: string;
+    }) => portalApi.createTest(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-tests"] });
+      setShowAddModal(false);
+      setFormSubject("");
+      setFormExamName("");
+      setFormRemarks("");
+      setFormQuestionPaper(null);
+      setFormAnswerPaper(null);
+    },
+  });
+
+  const deleteTestMutation = useMutation({
+    mutationFn: (id: string) => portalApi.deleteTest(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-tests"] });
+    },
+  });
+
+  const handlePaperUpload = async (file: File, type: "question" | "answer") => {
+    try {
+      setIsUploadingPaper(true);
+      const res = await portalApi.uploadTestPaper(file);
+      if (type === "question") {
+        setFormQuestionPaper({ filename: res.data.filename, url: res.data.url });
+      } else {
+        setFormAnswerPaper({ filename: res.data.filename, url: res.data.url });
+      }
+    } catch (err) {
+      console.error("Failed to upload test paper", err);
+      alert("Failed to upload document. Please try again.");
+    } finally {
+      setIsUploadingPaper(false);
+    }
+  };
 
   const availableFilterOptions = useMemo(() => {
     const list = [...PREDEFINED_TERMS];
@@ -162,10 +276,14 @@ export default function StudentTestsPage() {
   const getSanitizedPdfUrl = (url?: string | null) => {
     if (!url) return "";
     let clean = url.trim();
-    if (clean.startsWith("JVBERi")) {
+    if (clean.includes("data:")) {
+      clean = clean.substring(clean.indexOf("data:"));
+    } else if (clean.startsWith("JVBERi")) {
       clean = `data:application/pdf;base64,${clean}`;
     } else if (clean.startsWith("data:")) {
       clean = clean.replace(/^data:[^;]+;base64,/, "data:application/pdf;base64,");
+    } else {
+      clean = getFileUrl(clean);
     }
     return clean;
   };
@@ -259,31 +377,54 @@ export default function StudentTestsPage() {
           <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>View your exam score card logs, averages, and learning curves</p>
         </div>
 
-        <div style={{ position: "relative" }}>
-          <button
-            type="button"
-            onClick={() => setShowFilterPanel(!showFilterPanel)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              padding: "8px 14px",
-              borderRadius: "var(--radius-sm)",
-              fontSize: 13,
-              fontWeight: 600,
-              background: selectedExamFilters.length > 0 ? "var(--brand-500)" : "var(--card-bg)",
-              color: selectedExamFilters.length > 0 ? "#ffffff" : "var(--text-primary)",
-              border: "1.5px solid",
-              borderColor: selectedExamFilters.length > 0 ? "var(--brand-600)" : "var(--border-color)",
-              cursor: "pointer",
-              boxShadow: "var(--shadow-xs)",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <Filter size={15} />
-            SELECT TERM / EXAM {selectedExamFilters.length > 0 && `(${selectedExamFilters.length})`}
-            <ChevronDown size={14} style={{ transform: showFilterPanel ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
-          </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {canEdit && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: "var(--radius-sm, 8px)",
+                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)",
+              }}
+            >
+              <Plus size={15} /> Log Test Score
+            </button>
+          )}
+
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "8px 14px",
+                borderRadius: "var(--radius-sm)",
+                fontSize: 13,
+                fontWeight: 600,
+                background: selectedExamFilters.length > 0 ? "var(--brand-500)" : "var(--card-bg)",
+                color: selectedExamFilters.length > 0 ? "#ffffff" : "var(--text-primary)",
+                border: "1.5px solid",
+                borderColor: selectedExamFilters.length > 0 ? "var(--brand-600)" : "var(--border-color)",
+                cursor: "pointer",
+                boxShadow: "var(--shadow-xs)",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <Filter size={15} />
+              SELECT TERM / EXAM {selectedExamFilters.length > 0 && `(${selectedExamFilters.length})`}
+              <ChevronDown size={14} style={{ transform: showFilterPanel ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+            </button>
 
           {/* Click-outside backdrop */}
           {showFilterPanel && (
@@ -377,6 +518,7 @@ export default function StudentTestsPage() {
           )}
         </div>
       </div>
+    </div>
 
       {/* Active Filter Chips */}
       {selectedExamFilters.length > 0 && (
@@ -502,6 +644,9 @@ export default function StudentTestsPage() {
                   <th style={{ padding: "12px 18px", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "left" }}>Marks</th>
                   <th style={{ padding: "12px 18px", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "left" }}>Uploaded Papers</th>
                   <th style={{ padding: "12px 18px", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "left" }}>Date</th>
+                  {canEdit && (
+                    <th style={{ padding: "12px 18px", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -594,6 +739,30 @@ export default function StudentTestsPage() {
                           "-"
                         )}
                       </td>
+
+                      {canEdit && (
+                        <td style={{ padding: "14px 18px", fontSize: 13, textAlign: "right" }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Delete test score for ${test.exam_name} (${test.subject})?`)) {
+                                deleteTestMutation.mutate(test.id);
+                              }
+                            }}
+                            title="Delete test"
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "#ef4444",
+                              cursor: "pointer",
+                              padding: "4px 8px",
+                              borderRadius: 4,
+                            }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -632,6 +801,335 @@ export default function StudentTestsPage() {
           <p style={{ fontSize: 13, color: "var(--text-secondary)", maxWidth: 360, margin: "0 auto" }}>
             When your tutor logs your center test scores or board exams, they will show up here.
           </p>
+          {canEdit && (
+            <div style={{ marginTop: 16 }}>
+              <button
+                onClick={() => setShowAddModal(true)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 16px",
+                  borderRadius: "var(--radius-sm, 8px)",
+                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  color: "#fff",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                <Plus size={15} /> Log Your First Score
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Log Test Score Modal */}
+      {showAddModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16,
+          }}
+          onClick={() => setShowAddModal(false)}
+        >
+          <div
+            style={{
+              background: "var(--card-bg, #fff)",
+              borderRadius: "var(--radius, 12px)",
+              border: "1px solid var(--border-color, #e2e8f0)",
+              width: "100%",
+              maxWidth: 500,
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+              padding: 24,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Log Test Score</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!formSubject.trim() || !formExamName.trim()) return;
+                createTestMutation.mutate({
+                  subject: formSubject.trim(),
+                  exam_name: formExamName.trim(),
+                  exam_type: formExamType,
+                  max_marks: Number(formMaxMarks),
+                  obtained_marks: Number(formObtainedMarks),
+                  exam_date: formExamDate,
+                  remarks: formRemarks.trim() || undefined,
+                  question_paper_name: formQuestionPaper?.filename,
+                  question_paper_url: formQuestionPaper?.url,
+                  answer_paper_name: formAnswerPaper?.filename,
+                  answer_paper_url: formAnswerPaper?.url,
+                });
+              }}
+              style={{ display: "flex", flexDirection: "column", gap: 14 }}
+            >
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Subject *
+                </label>
+                <input
+                  required
+                  placeholder="e.g. Mathematics, Physics"
+                  value={formSubject}
+                  onChange={(e) => setFormSubject(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Exam / Test Name *
+                </label>
+                <input
+                  required
+                  placeholder="e.g. SEM1, Unit Test 1, Board Mock"
+                  value={formExamName}
+                  onChange={(e) => setFormExamName(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                    Exam Type
+                  </label>
+                  <select
+                    value={formExamType}
+                    onChange={(e) => setFormExamType(e.target.value as "school" | "tuition")}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      fontSize: 13,
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <option value="tuition">Tuition / Center</option>
+                    <option value="school">School / Board</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formExamDate}
+                    onChange={(e) => setFormExamDate(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      fontSize: 13,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                    Obtained Marks *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    max={formMaxMarks || 1000}
+                    value={formObtainedMarks}
+                    onChange={(e) => setFormObtainedMarks(Number(e.target.value))}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      fontSize: 13,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                    Maximum Marks *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={formMaxMarks}
+                    onChange={(e) => setFormMaxMarks(Number(e.target.value))}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      fontSize: 13,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Remarks / Notes
+                </label>
+                <input
+                  placeholder="e.g. Prepared well, needs improvement in section C"
+                  value={formRemarks}
+                  onChange={(e) => setFormRemarks(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              {canImport && (
+                <div style={{ borderTop: "1px dashed var(--border-color)", paddingTop: 12, marginTop: 4 }}>
+                  <span style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>
+                    Attach Exam Papers (Optional)
+                  </span>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                        Question Paper
+                      </label>
+                      <input
+                        type="file"
+                        accept=".pdf,image/*"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handlePaperUpload(f, "question");
+                        }}
+                        style={{ fontSize: 11, width: "100%" }}
+                      />
+                      {formQuestionPaper && (
+                        <span style={{ fontSize: 11, color: "var(--success)", display: "block", marginTop: 2 }}>
+                          ✓ {formQuestionPaper.filename}
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                        Answer Sheet
+                      </label>
+                      <input
+                        type="file"
+                        accept=".pdf,image/*"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handlePaperUpload(f, "answer");
+                        }}
+                        style={{ fontSize: 11, width: "100%" }}
+                      />
+                      {formAnswerPaper && (
+                        <span style={{ fontSize: 11, color: "var(--success)", display: "block", marginTop: 2 }}>
+                          ✓ {formAnswerPaper.filename}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-color)",
+                    background: "transparent",
+                    color: "var(--text-secondary)",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createTestMutation.isPending || isUploadingPaper}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: "var(--brand-500, #4f46e5)",
+                    color: "#fff",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {createTestMutation.isPending ? "Saving..." : isUploadingPaper ? "Uploading..." : "Save Test Score"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -670,9 +1168,9 @@ export default function StudentTestsPage() {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <a
-                  href={previewModalFile.url}
-                  download={previewModalFile.name}
+                <button
+                  type="button"
+                  onClick={handleDownloadFile}
                   className="paper-link-btn"
                   style={{
                     display: "inline-flex",
@@ -682,6 +1180,8 @@ export default function StudentTestsPage() {
                     fontSize: 12.5,
                     fontWeight: 600,
                     borderRadius: 6,
+                    border: "none",
+                    cursor: "pointer",
                     textDecoration: "none",
                     background: "var(--brand-500)",
                     color: "#ffffff",
@@ -689,7 +1189,7 @@ export default function StudentTestsPage() {
                 >
                   <Download size={14} />
                   Download
-                </a>
+                </button>
                 <button
                   style={{
                     background: "none",
@@ -732,7 +1232,7 @@ export default function StudentTestsPage() {
                 />
               ) : (
                 <img
-                  src={previewModalFile.url}
+                  src={getFileUrl(previewModalFile.url)}
                   alt={previewModalFile.name}
                   style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 6 }}
                 />

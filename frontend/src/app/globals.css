@@ -414,18 +414,43 @@ body {
 /* ─── Responsive Table Container Utility ──────────────── */
 .table-responsive {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   background: var(--card-bg);
   margin-bottom: 16px;
+  position: relative;
 }
 
 .table-responsive table {
   width: 100%;
   min-width: 600px;
   border-collapse: collapse;
+}
+
+/* ─── Global Responsive Media & Container Helpers ─────── */
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+/* Scrollable Tab Navigation on Mobile */
+.tabs-scroll-container {
+  display: flex;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+
+.tabs-scroll-container::-webkit-scrollbar {
+  display: none;
 }
 
 /* ─── Touch target improvements ───────────────────────── */
@@ -435,4 +460,11 @@ input,
 select,
 textarea {
   touch-action: manipulation;
+}
+
+@media (max-width: 640px) {
+  /* Prevent horizontal overflowing on narrow screens */
+  body, html {
+    overflow-x: hidden;
+  }
 }

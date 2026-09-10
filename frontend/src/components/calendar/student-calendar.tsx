@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -17,9 +17,14 @@ import {
   CheckCircle,
   HelpCircle,
   CreditCard,
+  Maximize2,
+  Eye,
+  Edit3,
+  BookOpen,
 } from "lucide-react";
 import { academicApi, type CalendarDayData } from "@/lib/academic-api";
 import { formatLocalDateToISO, formatDisplayDate } from "@/lib/date-utils";
+import { PlanTextModal } from "./plan-text-modal";
 
 interface StudentCalendarProps {
   studentId: string;
@@ -590,6 +595,177 @@ export function StudentCalendar({ studentId }: StudentCalendarProps) {
           margin-bottom: 6px;
           color: var(--text-primary);
         }
+
+        /* ─── Plan Text Modal (Center Popup) ─── */
+        .plan-text-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          background: rgba(15, 23, 42, 0.65);
+          backdrop-filter: blur(6px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          animation: planModalFadeIn 0.15s ease-out;
+        }
+
+        @keyframes planModalFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        @keyframes planModalScaleUp {
+          from { opacity: 0; transform: scale(0.96) translateY(8px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .plan-text-modal-content {
+          background: var(--card-bg, #ffffff);
+          width: 100%;
+          max-width: 680px;
+          max-height: 85vh;
+          border-radius: 16px;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--border-color);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          animation: planModalScaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .plan-text-modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px 22px;
+          border-bottom: 1px solid var(--border-color);
+          background: var(--bg-secondary);
+        }
+
+        .plan-text-modal-icon {
+          width: 38px;
+          height: 38px;
+          border-radius: 10px;
+          background: var(--brand-100, #e0e7ff);
+          color: var(--brand-600, #4f46e5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .modal-view-toggle {
+          display: flex;
+          background: var(--bg-tertiary);
+          padding: 3px;
+          border-radius: 8px;
+          border: 1px solid var(--border-color);
+          gap: 2px;
+        }
+
+        .modal-toggle-btn {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px 10px;
+          border-radius: 6px;
+          border: none;
+          background: transparent;
+          color: var(--text-secondary);
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .modal-toggle-btn.active {
+          background: var(--card-bg);
+          color: var(--text-primary);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-close-btn {
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 8px;
+          border: none;
+          background: transparent;
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .modal-close-btn:hover {
+          background: var(--bg-tertiary);
+          color: var(--text-primary);
+        }
+
+        .plan-text-modal-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 22px;
+          min-height: 240px;
+        }
+
+        .modal-reader-view {
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 20px;
+        }
+
+        .modal-editor-textarea {
+          width: 100%;
+          min-height: 300px;
+          padding: 16px;
+          border: 1.5px solid var(--border-color);
+          border-radius: 12px;
+          font-size: 14.5px;
+          line-height: 1.7;
+          font-family: inherit;
+          color: var(--text-primary);
+          background: var(--card-bg);
+          resize: vertical;
+        }
+
+        .modal-editor-textarea:focus {
+          outline: none;
+          border-color: var(--brand-500);
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        .plan-text-modal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 22px;
+          border-top: 1px solid var(--border-color);
+          background: var(--bg-secondary);
+        }
+
+        .btn-text-expand {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 2px 8px;
+          border-radius: 6px;
+          border: 1px solid var(--border-color);
+          background: var(--bg-tertiary);
+          color: var(--brand-600, #4f46e5);
+          font-size: 11px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .btn-text-expand:hover {
+          background: var(--brand-50, #f5f3ff);
+          border-color: var(--brand-300, #c7d2fe);
+          transform: translateY(-1px);
+        }
       `}</style>
 
       <div className="split-layout">
@@ -709,9 +885,7 @@ export function StudentCalendar({ studentId }: StudentCalendarProps) {
                     )}
                   </div>
 
-                  <div className="topics-taught-preview">
-                    {dayData?.daily_plan?.topics_to_teach}
-                  </div>
+                  {/* Daily plan text hidden from grid cells per user preference; visible in sidebar */}
 
                   <div className="cell-indicators">
                     {/* Attendance Dot */}
@@ -873,18 +1047,67 @@ function DayDetailsPanel({
   const queryClient = useQueryClient();
   const [topics, setTopics] = useState(dayData?.daily_plan?.topics_to_teach || "");
   const [notes, setNotes] = useState(dayData?.daily_plan?.notes || "");
+  const [actuallyTaught, setActuallyTaught] = useState(dayData?.daily_plan?.actually_taught || "");
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventTitle, setEventTitle] = useState("");
   const [eventType, setEventType] = useState("class");
   const [eventDesc, setEventDesc] = useState("");
 
+  // Center Popup Modal State for Full Text View
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    field: "topics" | "actuallyTaught" | "notes";
+    value: string;
+  }>({
+    isOpen: false,
+    title: "",
+    field: "topics",
+    value: "",
+  });
+
+  const openModal = (
+    title: string,
+    field: "topics" | "actuallyTaught" | "notes",
+    currentVal: string
+  ) => {
+    setModalState({
+      isOpen: true,
+      title,
+      field,
+      value: currentVal,
+    });
+  };
+
+  const handleModalSave = (newVal: string) => {
+    const field = modalState.field;
+    const nextTopics = field === "topics" ? newVal : topics;
+    const nextNotes = field === "notes" ? newVal : notes;
+    const nextActuallyTaught = field === "actuallyTaught" ? newVal : actuallyTaught;
+
+    if (field === "topics") setTopics(newVal);
+    else if (field === "actuallyTaught") setActuallyTaught(newVal);
+    else if (field === "notes") setNotes(newVal);
+
+    academicApi.saveDailyPlan(studentId, dateStr, nextTopics, nextNotes, nextActuallyTaught).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    });
+  };
+
   // Sync plan inputs when day changes
   useMemo(() => {
     setTopics(dayData?.daily_plan?.topics_to_teach || "");
     setNotes(dayData?.daily_plan?.notes || "");
+    setActuallyTaught(dayData?.daily_plan?.actually_taught || "");
     setShowEventForm(false);
     setEventTitle("");
     setEventDesc("");
+    setModalState({
+      isOpen: false,
+      title: "",
+      field: "topics",
+      value: "",
+    });
   }, [dateStr, dayData]);
 
   // ─── Mutations ──────────────────────────────────────────
@@ -901,7 +1124,7 @@ function DayDetailsPanel({
   });
 
   const savePlanMutation = useMutation({
-    mutationFn: () => academicApi.saveDailyPlan(studentId, dateStr, topics, notes),
+    mutationFn: () => academicApi.saveDailyPlan(studentId, dateStr, topics, notes, actuallyTaught),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
     },
@@ -1042,63 +1265,230 @@ function DayDetailsPanel({
         )}
       </div>
 
-      {/* ─── Daily Plan ─── */}
+      {/* ─── Daily Plan & Delivery ─── */}
       <div>
         <div className="panel-section-title">
-          <span>Daily Plan</span>
+          <span>Daily Plan & Delivery</span>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {/* 1. Planned Topics to Teach */}
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: 11,
-                color: "var(--gray-500)",
-                marginBottom: 4,
-              }}
-              htmlFor="topics-to-teach"
-            >
-              Topics to Teach
-            </label>
-            <input
-              id="topics-to-teach"
-              className="form-input"
-              value={topics}
-              onChange={(e) => setTopics(e.target.value)}
-              placeholder="e.g. Linear Equations in 2 Variables"
-              style={{ padding: "8px 12px" }}
-            />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: "var(--gray-500)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+                htmlFor="topics-to-teach"
+                onClick={() => openModal("Planned Topics to Teach", "topics", topics)}
+                title="Click to see whole text in center popup"
+              >
+                <span>Planned Topics to Teach</span>
+              </label>
+              <button
+                type="button"
+                className="btn-text-expand"
+                onClick={() => openModal("Planned Topics to Teach", "topics", topics)}
+                title="Click to view full text in center popup"
+                id="expand-topics-btn"
+              >
+                <Maximize2 size={11} />
+                <span>Expand</span>
+              </button>
+            </div>
+            <div style={{ position: "relative" }}>
+              <input
+                id="topics-to-teach"
+                className="form-input"
+                value={topics}
+                onChange={(e) => setTopics(e.target.value)}
+                onClick={() => openModal("Planned Topics to Teach", "topics", topics)}
+                placeholder="e.g. Linear Equations in 2 Variables"
+                style={{ padding: "8px 30px 8px 12px", cursor: "pointer" }}
+                title="Click to expand & view full text in center popup"
+              />
+              <button
+                type="button"
+                onClick={() => openModal("Planned Topics to Teach", "topics", topics)}
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  color: "var(--brand-600, #4f46e5)",
+                  cursor: "pointer",
+                  padding: 3,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+                title="Open in center popup"
+              >
+                <Maximize2 size={13} />
+              </button>
+            </div>
           </div>
+
+          {/* 2. Things Actually Taught Today */}
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: 11,
-                color: "var(--gray-500)",
-                marginBottom: 4,
-              }}
-              htmlFor="plan-notes"
-            >
-              Teaching Notes / Remarks
-            </label>
-            <textarea
-              id="plan-notes"
-              className="notes-textarea"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Private notes, reminders, student response..."
-            />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: "var(--brand-600, #4f46e5)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+                htmlFor="actually-taught"
+                onClick={() => openModal("Things Actually Taught Today", "actuallyTaught", actuallyTaught)}
+                title="Click to see whole text in center popup"
+              >
+                <span>Things Actually Taught Today</span>
+              </label>
+              <button
+                type="button"
+                className="btn-text-expand"
+                onClick={() => openModal("Things Actually Taught Today", "actuallyTaught", actuallyTaught)}
+                title="Click to view full text in center popup"
+                id="expand-actually-taught-btn"
+              >
+                <Maximize2 size={11} />
+                <span>Expand</span>
+              </button>
+            </div>
+            <div style={{ position: "relative" }}>
+              <textarea
+                id="actually-taught"
+                className="notes-textarea"
+                style={{ minHeight: 65, borderColor: "var(--brand-200, #c7d2fe)", paddingRight: 32, cursor: "pointer" }}
+                value={actuallyTaught}
+                onChange={(e) => setActuallyTaught(e.target.value)}
+                onClick={() => openModal("Things Actually Taught Today", "actuallyTaught", actuallyTaught)}
+                placeholder="Record what was actually covered or completed in class today..."
+                title="Click to expand & view full text in center popup"
+              />
+              <button
+                type="button"
+                onClick={() => openModal("Things Actually Taught Today", "actuallyTaught", actuallyTaught)}
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: 8,
+                  background: "rgba(255,255,255,0.9)",
+                  borderRadius: 4,
+                  border: "1px solid var(--brand-200, #c7d2fe)",
+                  color: "var(--brand-600, #4f46e5)",
+                  cursor: "pointer",
+                  padding: "2px 5px",
+                  display: "flex",
+                  alignItems: "center",
+                  fontSize: 10,
+                  gap: 3,
+                }}
+                title="Open in center popup"
+              >
+                <Maximize2 size={11} />
+              </button>
+            </div>
           </div>
+
+          {/* 3. Teaching Notes / Remarks */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: "var(--gray-500)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+                htmlFor="plan-notes"
+                onClick={() => openModal("Teaching Notes / Remarks", "notes", notes)}
+                title="Click to see whole text in center popup"
+              >
+                <span>Teaching Notes / Remarks</span>
+              </label>
+              <button
+                type="button"
+                className="btn-text-expand"
+                onClick={() => openModal("Teaching Notes / Remarks", "notes", notes)}
+                title="Click to view full text in center popup"
+                id="expand-notes-btn"
+              >
+                <Maximize2 size={11} />
+                <span>Expand</span>
+              </button>
+            </div>
+            <div style={{ position: "relative" }}>
+              <textarea
+                id="plan-notes"
+                className="notes-textarea"
+                style={{ minHeight: 80, paddingRight: 32, cursor: "pointer" }}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onClick={() => openModal("Teaching Notes / Remarks", "notes", notes)}
+                placeholder="Private notes, reminders, student response..."
+                title="Click to expand & view full text in center popup"
+              />
+              <button
+                type="button"
+                onClick={() => openModal("Teaching Notes / Remarks", "notes", notes)}
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: 8,
+                  background: "rgba(255,255,255,0.9)",
+                  borderRadius: 4,
+                  border: "1px solid var(--border-color)",
+                  color: "var(--brand-600, #4f46e5)",
+                  cursor: "pointer",
+                  padding: "2px 5px",
+                  display: "flex",
+                  alignItems: "center",
+                  fontSize: 10,
+                  gap: 3,
+                }}
+                title="Open in center popup"
+              >
+                <Maximize2 size={11} />
+              </button>
+            </div>
+          </div>
+
           <button
             className="save-plan-btn"
             disabled={savePlanMutation.isPending}
             onClick={() => savePlanMutation.mutate()}
             id="save-plan-btn"
           >
-            {savePlanMutation.isPending ? "Saving Plan..." : "Save Plan / Notes"}
+            {savePlanMutation.isPending ? "Saving Daily Plan & Log..." : "Save Daily Plan & Log"}
           </button>
         </div>
       </div>
+
+      {/* Plan Text Modal (Center Popup) */}
+      <PlanTextModal
+        isOpen={modalState.isOpen}
+        onClose={() => setModalState((prev) => ({ ...prev, isOpen: false }))}
+        title={modalState.title}
+        field={modalState.field}
+        dateStr={dateStr}
+        initialValue={modalState.value}
+        onSave={handleModalSave}
+        isSaving={savePlanMutation.isPending}
+      />
 
       {/* ─── Events ─── */}
       <div>

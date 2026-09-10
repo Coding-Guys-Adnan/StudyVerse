@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import String, DateTime, ForeignKey, UniqueConstraint, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -32,4 +32,9 @@ class StudentTeacher(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
+    )
+    permissions: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
     )
